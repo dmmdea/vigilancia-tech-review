@@ -18,6 +18,14 @@ import urllib.request
 
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) vigilancia-tech-review/1.0"
 CHUNK = 1 << 20
+ID_RE = re.compile(r"[\w-]{10,}\Z")
+ALLOWED_HOSTS = (".google.com", ".googleusercontent.com")
+
+
+def safe_google_url(url: str) -> bool:
+    p = urllib.parse.urlparse(url)
+    return p.scheme == "https" and (
+        p.hostname or "").endswith(ALLOWED_HOSTS)
 
 
 def fetch(url: str) -> tuple[bytes, str]:
@@ -48,6 +56,9 @@ def looks_like_document(data: bytes) -> bool:
 
 
 def download(file_id: str, out_path: str, kind: str) -> None:
+    if not ID_RE.fullmatch(file_id):
+        print(f"ERROR: '{file_id}' is not a valid Drive file id.", file=sys.stderr)
+        sys.exit(1)
     if kind == "gslides":
         url = f"https://docs.google.com/presentation/d/{file_id}/export/pptx"
     else:
@@ -57,7 +68,7 @@ def download(file_id: str, out_path: str, kind: str) -> None:
         data, ctype = fetch(url)
         if data[:15].lstrip().lower().startswith((b"<!doctype", b"<html")):
             retry = confirm_url_from_interstitial(data.decode("utf-8", "replace"))
-            if retry:
+            if retry and safe_google_url(retry):
                 data, ctype = fetch(retry)
     except urllib.error.HTTPError as e:
         print(f"ERROR: download failed for {file_id} (HTTP {e.code}).", file=sys.stderr)

@@ -93,7 +93,9 @@ Build `$WORK/results.json`:
   "status_reason": "...", "disqualified": false, "flags": []}> ]}
 ```
 
-Reviewed decks get `"status": "revisado"`. Do not compute final grades yourself —
+Reviewed decks get `"status": "revisado"`. Overwrite each reviewer's `file` field with
+the ORIGINAL Drive filename from your own listing metadata (reviewers sometimes echo
+the PDF name instead). Do not compute final grades yourself —
 `make_excel.py` does it (single source of truth: 0.50/0.25/0.25, DQ → 1.0).
 
 ### 6. Generate the Excel

@@ -88,6 +88,8 @@ def list_folder(folder_id: str) -> dict:
 
 
 def main() -> None:
+    # Windows defaults stdout to cp1252; folder/file names are routinely non-ASCII.
+    sys.stdout.reconfigure(encoding="utf-8")
     if len(sys.argv) != 2:
         print(__doc__, file=sys.stderr)
         sys.exit(1)
