@@ -19,6 +19,11 @@ import sys
 import urllib.error
 import urllib.request
 
+# Windows defaults std streams to cp1252; names and messages are non-ASCII.
+for _s in (sys.stdout, sys.stderr):
+    if hasattr(_s, "reconfigure"):
+        _s.reconfigure(encoding="utf-8")
+
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) vigilancia-tech-review/1.0"
 
 
@@ -80,12 +85,13 @@ def list_folder(folder_id: str) -> dict:
     # never be skipped (silent drop) or bridged into its neighbor (silent merge —
     # which would attribute one student's file to another's name).
     blocks = re.split(r'<div class="flip-entry" id="entry-', page)[1:]
-    # Reconcile split count against the raw marker count: if Drive renames the
-    # id attribute but keeps the class, the split silently yields zero blocks —
-    # which must read as "layout changed", never as "empty folder".
-    n_markers = page.count('class="flip-entry"')
-    if n_markers != len(blocks):
-        print(f"ERROR: page shows {n_markers} entry markers but "
+    # Reconcile the split count against markers that do NOT share the split
+    # pattern's literal: drift in EITHER the class or the id attribute must
+    # read as "layout changed" (exit 3), never as "empty folder" (exit 0).
+    n_ids = page.count('id="entry-')
+    n_titles = page.count("flip-entry-title")
+    if len(blocks) != n_ids or len(blocks) != n_titles:
+        print(f"ERROR: page shows {n_ids} entry ids / {n_titles} titles but "
               f"{len(blocks)} parseable blocks — Drive's entry markup changed. "
               "Refusing to return a partial listing.", file=sys.stderr)
         sys.exit(3)
@@ -109,8 +115,6 @@ def list_folder(folder_id: str) -> dict:
 
 
 def main() -> None:
-    # Windows defaults stdout to cp1252; folder/file names are routinely non-ASCII.
-    sys.stdout.reconfigure(encoding="utf-8")
     if len(sys.argv) != 2:
         print(__doc__, file=sys.stderr)
         sys.exit(1)

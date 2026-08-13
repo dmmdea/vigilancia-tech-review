@@ -9,9 +9,9 @@ Usage:
 
 Verifies the payload is a real PPTX/PDF (magic bytes), not an HTML error page.
 Exit codes: 0 ok · 2 download failed / not accessible (per-file) · 3 payload is
-not a document (per-file) · 4 Drive served a quota/permission page — likely
-rate-limiting of anonymous downloads; STOP the whole run, wait, and retry later
-instead of marking remaining files as failed.
+not a document (per-file) · 4 Drive served a QUOTA page — it is rate-limiting
+anonymous downloads; STOP the whole run, wait, and retry later instead of
+marking remaining files as failed.
 """
 import os
 import re
@@ -19,6 +19,11 @@ import sys
 import urllib.error
 import urllib.parse
 import urllib.request
+
+# Windows defaults std streams to cp1252; names and messages are non-ASCII.
+for _s in (sys.stdout, sys.stderr):
+    if hasattr(_s, "reconfigure"):
+        _s.reconfigure(encoding="utf-8")
 
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) vigilancia-tech-review/1.0"
 CHUNK = 1 << 20
@@ -85,12 +90,18 @@ def download(file_id: str, out_path: str, kind: str) -> None:
         if is_html(data):
             retry = confirm_url_from_interstitial(data.decode("utf-8", "replace"))
             if retry is None:
-                print(f"ERROR: Drive returned an HTML page with no download form "
-                      f"for {file_id} ({html_title(data)}). Possible quota limit "
-                      "or permission problem — if this repeats across files, "
-                      "Drive is rate-limiting anonymous downloads: stop and "
-                      "retry later.", file=sys.stderr)
-                sys.exit(4)
+                body = data[:8192].decode("utf-8", "replace").lower()
+                quota = ("quota" in body or "too many people have" in body
+                         or "at this time" in body)
+                if quota:
+                    print(f"ERROR: Drive is rate-limiting anonymous downloads "
+                          f"(quota page for {file_id}: {html_title(data)}). "
+                          "Stop the run and retry later.", file=sys.stderr)
+                    sys.exit(4)
+                print(f"ERROR: Drive returned an HTML page with no download "
+                      f"form for {file_id} ({html_title(data)}). The file is "
+                      "probably not shared publicly.", file=sys.stderr)
+                sys.exit(2)
             retry = urllib.parse.urljoin(url, retry)  # form actions can be relative
             if not safe_google_url(retry):
                 print(f"ERROR: Drive interstitial pointed to a non-Google URL, "
@@ -119,7 +130,6 @@ def download(file_id: str, out_path: str, kind: str) -> None:
 
 
 def main() -> None:
-    sys.stdout.reconfigure(encoding="utf-8")
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     kind = "file"
     for a in sys.argv[1:]:

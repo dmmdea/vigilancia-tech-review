@@ -21,6 +21,11 @@ import subprocess
 import sys
 import tempfile
 
+# Windows defaults std streams to cp1252; names and messages are non-ASCII.
+for _s in (sys.stdout, sys.stderr):
+    if hasattr(_s, "reconfigure"):
+        _s.reconfigure(encoding="utf-8")
+
 try:
     from pypdf import PdfReader
 except ImportError:
@@ -68,6 +73,9 @@ def run_soffice(exe: str, src: str, dst: str) -> bool:
         )
     except subprocess.TimeoutExpired:
         print("soffice timed out after 600s.", file=sys.stderr)
+        return False
+    except OSError as e:
+        print(f"soffice could not be executed: {e}", file=sys.stderr)
         return False
     if res.returncode != 0 or not os.path.exists(produced):
         print(f"soffice failed (rc={res.returncode}): "
@@ -120,7 +128,6 @@ def run_powerpoint(src: str, dst: str) -> bool:
 
 
 def main() -> None:
-    sys.stdout.reconfigure(encoding="utf-8")
     if len(sys.argv) != 3:
         print(__doc__, file=sys.stderr)
         sys.exit(1)

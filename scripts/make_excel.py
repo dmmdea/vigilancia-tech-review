@@ -16,10 +16,13 @@ filenames cannot corrupt the top-5. Ranking order: reviewed & not DQ (by final
 desc) -> DQ -> not reviewed. Top 5 non-DQ rows are starred and highlighted.
 
 --listing (repeatable): the drive_list.py JSON(s) for the folder and any
-subfolders. When given, every reviewable entry (pptx/ppt/pdf/gslides) missing
-from results.json fails the build (exit 2) listing the absent files — the
-mechanical backstop for "nothing is silently dropped".
-Exit codes: 0 ok · 1 usage · 2 empty results / completeness violation.
+subfolders. When given, EVERY listed entry needs a results row (reviewed or
+NO REVISADO) — except folders that were themselves passed as a --listing.
+Any entry without a row fails the build (exit 2) naming the absent files —
+the mechanical backstop for "nothing is silently dropped".
+Exit codes: 0 ok · 1 usage (bad args, unknown option, unreadable results
+JSON) · 2 empty results / duplicate id / unreadable or invalid listing /
+completeness violation.
 """
 import json
 import sys
@@ -28,14 +31,17 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
+# Windows defaults std streams to cp1252; names and messages are non-ASCII.
+for _s in (sys.stdout, sys.stderr):
+    if hasattr(_s, "reconfigure"):
+        _s.reconfigure(encoding="utf-8")
+
 HEADER_FILL = PatternFill("solid", fgColor="1F2937")
 HEADER_FONT = Font(bold=True, color="FFFFFF")
 TOP5_FILL = PatternFill("solid", fgColor="FDE68A")
 DQ_FILL = PatternFill("solid", fgColor="FECACA")
 NOREV_FILL = PatternFill("solid", fgColor="E5E7EB")
 THIN = Border(*[Side(style="thin", color="D1D5DB")] * 4)
-
-DECK_EXTS = (".pptx", ".ppt", ".pdf")
 
 RANK_COLS = [
     ("Posición", 9), ("Top 5", 7), ("Archivo", 38), ("Estudiante", 24),
@@ -67,12 +73,13 @@ def normalize(r: dict) -> None:
     if isinstance(age, (int, float)):
         if 3.5 <= age <= 4.5 and "VERIFICAR FECHA" not in r["flags"]:
             r["flags"].append("VERIFICAR FECHA")
-    elif (conf in ("alta", "media") and r.get("status") == "revisado"
-          and "REVISAR MANUALMENTE" not in r["flags"]):
+    elif conf in ("alta", "media") and r.get("status") == "revisado":
         # confident verification must yield a numeric age, else the DQ filter
         # silently never fires
-        r["flags"].append("REVISAR MANUALMENTE")
-        r["flags"].append("EDAD SIN CALCULAR")
+        if "REVISAR MANUALMENTE" not in r["flags"]:
+            r["flags"].append("REVISAR MANUALMENTE")
+        if "EDAD SIN CALCULAR" not in r["flags"]:
+            r["flags"].append("EDAD SIN CALCULAR")
     status = r.get("status")
     if status not in ("revisado", "no_revisado"):
         r["status"] = "no_revisado"
@@ -122,8 +129,16 @@ def check_completeness(results: list, listing_paths: list) -> None:
     explored_folders = set()
     entries = []
     for p in listing_paths:
-        with open(p, encoding="utf-8") as f:
-            listing = json.load(f)
+        try:
+            with open(p, encoding="utf-8") as f:
+                listing = json.load(f)
+        except (OSError, json.JSONDecodeError) as e:
+            print(f"ERROR: cannot read listing {p}: {e}", file=sys.stderr)
+            sys.exit(2)
+        if "entries" not in listing or "folder_id" not in listing:
+            print(f"ERROR: {p} is not a drive_list.py listing "
+                  "(missing entries/folder_id).", file=sys.stderr)
+            sys.exit(2)
         explored_folders.add(listing.get("folder_id"))
         entries.extend(listing.get("entries", []))
     for e in entries:
@@ -151,7 +166,6 @@ def style_header(ws, cols):
 
 
 def main() -> None:
-    sys.stdout.reconfigure(encoding="utf-8")
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     listings = [a.split("=", 1)[1] for a in sys.argv[1:]
                 if a.startswith("--listing=")]
@@ -197,11 +211,12 @@ def main() -> None:
                 and not r.get("disqualified") and r["_final"] is not None]
     top5_uids = {r["_uid"] for r in rankable[:5]}
     rankable_uids = {r["_uid"] for r in rankable}
-    if len(rankable) > 5:
+    # Flag a tie only when it actually straddles the top-5 cut (position 5 vs 6);
+    # a tie wholly inside the top 5 contests nothing.
+    if len(rankable) > 5 and rankable[5]["_final"] == rankable[4]["_final"]:
         cut = rankable[4]["_final"]
-        tied = [r for r in rankable if r["_final"] == cut]
-        if len(tied) > 1:
-            for r in tied:
+        for r in rankable:
+            if r["_final"] == cut:
                 r["flags"].append("EMPATE TOP5")
 
     wb = Workbook()
