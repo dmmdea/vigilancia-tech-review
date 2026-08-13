@@ -56,7 +56,23 @@ DETAIL_COLS = [
 
 def normalize(r: dict) -> None:
     """Validate one result row in place: set r['_final'] or downgrade to no_revisado."""
-    r.setdefault("flags", [])
+    # flags is the one field this module appends to and joins — coerce any
+    # LLM-drifted shape (null, bare string, list of dicts) to a list of strings.
+    f = r.get("flags")
+    r["flags"] = ([str(x) for x in f] if isinstance(f, list)
+                  else [str(f)] if f else [])
+    # Mechanical backstops for the launch-date rules (prompt-only otherwise):
+    age = r.get("age_months")
+    conf = r.get("verification_confidence")
+    if isinstance(age, (int, float)):
+        if 3.5 <= age <= 4.5 and "VERIFICAR FECHA" not in r["flags"]:
+            r["flags"].append("VERIFICAR FECHA")
+    elif (conf in ("alta", "media") and r.get("status") == "revisado"
+          and "REVISAR MANUALMENTE" not in r["flags"]):
+        # confident verification must yield a numeric age, else the DQ filter
+        # silently never fires
+        r["flags"].append("REVISAR MANUALMENTE")
+        r["flags"].append("EDAD SIN CALCULAR")
     status = r.get("status")
     if status not in ("revisado", "no_revisado"):
         r["status"] = "no_revisado"
@@ -98,27 +114,28 @@ def sort_key(r: dict):
     return (group, -(final if final is not None else 0.0))
 
 
-def reviewable_names(listing: dict) -> dict:
-    """id -> name for entries the pipeline must account for."""
-    out = {}
-    for e in listing.get("entries", []):
-        kind, name = e.get("kind"), e.get("name", "")
-        if kind == "gslides" or (kind == "file"
-                                 and name.lower().endswith(DECK_EXTS)):
-            out[e.get("id")] = name
-    return out
-
-
 def check_completeness(results: list, listing_paths: list) -> None:
+    """EVERY listed entry must be accounted for: non-folder entries need a
+    results row (reviewed or NO REVISADO); folder entries need either their own
+    --listing (they were explored) or a results row (declared unexplored)."""
     expected = {}
+    explored_folders = set()
+    entries = []
     for p in listing_paths:
         with open(p, encoding="utf-8") as f:
-            expected.update(reviewable_names(json.load(f)))
+            listing = json.load(f)
+        explored_folders.add(listing.get("folder_id"))
+        entries.extend(listing.get("entries", []))
+    for e in entries:
+        if e.get("kind") == "folder" and e.get("id") in explored_folders:
+            continue
+        expected[e.get("id")] = e.get("name", "(sin nombre)")
     have = {r.get("id") for r in results if r.get("id")}
     missing = {i: n for i, n in expected.items() if i not in have}
     if missing:
-        print("ERROR: results.json is missing rows for these reviewable files "
-              "(nothing may be silently dropped):", file=sys.stderr)
+        print("ERROR: results.json is missing rows for these listed entries "
+              "(nothing may be silently dropped — every entry gets a row, "
+              "reviewed or NO REVISADO):", file=sys.stderr)
         for i, n in missing.items():
             print(f"  - {n} (id {i})", file=sys.stderr)
         sys.exit(2)
@@ -138,11 +155,21 @@ def main() -> None:
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     listings = [a.split("=", 1)[1] for a in sys.argv[1:]
                 if a.startswith("--listing=")]
+    unknown = [a for a in sys.argv[1:]
+               if a.startswith("--") and not a.startswith("--listing=")]
+    if unknown:
+        # A typo'd flag must never silently disarm the completeness gate.
+        print(f"ERROR: unknown option(s): {' '.join(unknown)}", file=sys.stderr)
+        sys.exit(1)
     if len(args) != 2:
         print(__doc__, file=sys.stderr)
         sys.exit(1)
-    with open(args[0], encoding="utf-8") as f:
-        data = json.load(f)
+    try:
+        with open(args[0], encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError) as e:
+        print(f"ERROR: cannot read results JSON {args[0]}: {e}", file=sys.stderr)
+        sys.exit(1)
 
     results = data.get("results", [])
     if not results:
@@ -151,8 +178,17 @@ def main() -> None:
     if listings:
         check_completeness(results, listings)
 
+    seen_ids = {}
     for idx, r in enumerate(results):
-        r["_uid"] = r.get("id") or f"__row{idx}"
+        rid = r.get("id")
+        if rid:
+            if rid in seen_ids:
+                print(f"ERROR: duplicate id '{rid}' in results.json (rows "
+                      f"{seen_ids[rid]} and {idx}) — one Drive file must have "
+                      "exactly one row.", file=sys.stderr)
+                sys.exit(2)
+            seen_ids[rid] = idx
+        r["_uid"] = rid or f"__row{idx}"
         normalize(r)
     results.sort(key=sort_key)
 
@@ -160,10 +196,13 @@ def main() -> None:
                 if r.get("status") == "revisado"
                 and not r.get("disqualified") and r["_final"] is not None]
     top5_uids = {r["_uid"] for r in rankable[:5]}
-    rankable_ids = {id(r) for r in rankable}
-    if len(rankable) > 5 and rankable[4]["_final"] == rankable[5]["_final"]:
-        rankable[4]["flags"].append("EMPATE TOP5")
-        rankable[5]["flags"].append("EMPATE TOP5")
+    rankable_uids = {r["_uid"] for r in rankable}
+    if len(rankable) > 5:
+        cut = rankable[4]["_final"]
+        tied = [r for r in rankable if r["_final"] == cut]
+        if len(tied) > 1:
+            for r in tied:
+                r["flags"].append("EMPATE TOP5")
 
     wb = Workbook()
     ws = wb.active
@@ -175,7 +214,7 @@ def main() -> None:
         reviewed = r.get("status") == "revisado"
         dq = bool(r.get("disqualified"))
         in_top5 = r["_uid"] in top5_uids
-        if id(r) in rankable_ids:
+        if r["_uid"] in rankable_uids:
             pos += 1
             position = pos
         else:

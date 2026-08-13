@@ -80,17 +80,26 @@ def list_folder(folder_id: str) -> dict:
     # never be skipped (silent drop) or bridged into its neighbor (silent merge —
     # which would attribute one student's file to another's name).
     blocks = re.split(r'<div class="flip-entry" id="entry-', page)[1:]
+    # Reconcile split count against the raw marker count: if Drive renames the
+    # id attribute but keeps the class, the split silently yields zero blocks —
+    # which must read as "layout changed", never as "empty folder".
+    n_markers = page.count('class="flip-entry"')
+    if n_markers != len(blocks):
+        print(f"ERROR: page shows {n_markers} entry markers but "
+              f"{len(blocks)} parseable blocks — Drive's entry markup changed. "
+              "Refusing to return a partial listing.", file=sys.stderr)
+        sys.exit(3)
     entries = []
     for block in blocks:
         id_m = re.match(r'([\w-]+)"', block)
         href_m = re.search(r'<a href="([^"]+)"', block)
-        title_m = re.search(r'flip-entry-title">([^<]*)', block)
-        if not (id_m and href_m and title_m):
+        title_m = re.search(r'flip-entry-title">([^<]*)</div>', block)
+        name = html_mod.unescape(title_m.group(1)).strip() if title_m else ""
+        if not (id_m and href_m and title_m) or not name:
             print("ERROR: an entry in the Drive listing could not be parsed "
-                  "(page layout changed?). Refusing to return a partial listing.",
-                  file=sys.stderr)
+                  "(missing id, link, or name — page layout changed?). "
+                  "Refusing to return a partial listing.", file=sys.stderr)
             sys.exit(3)
-        name = html_mod.unescape(title_m.group(1)).strip()
         href = html_mod.unescape(href_m.group(1))
         entries.append(
             {"id": id_m.group(1), "name": name,

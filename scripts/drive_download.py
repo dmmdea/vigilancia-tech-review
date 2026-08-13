@@ -8,7 +8,10 @@ Usage:
 - kind=gslides : Google Slides native file, exported as .pptx
 
 Verifies the payload is a real PPTX/PDF (magic bytes), not an HTML error page.
-Exit codes: 0 ok · 2 download failed / not accessible · 3 payload is not a document.
+Exit codes: 0 ok · 2 download failed / not accessible (per-file) · 3 payload is
+not a document (per-file) · 4 Drive served a quota/permission page — likely
+rate-limiting of anonymous downloads; STOP the whole run, wait, and retry later
+instead of marking remaining files as failed.
 """
 import os
 import re
@@ -49,7 +52,8 @@ def confirm_url_from_interstitial(page: str) -> str | None:
         return None
     action, body = form.group(1), form.group(2)
     params = dict(re.findall(r'name="([^"]+)"\s+value="([^"]*)"', body))
-    return action + "?" + urllib.parse.urlencode(params)
+    sep = "&" if "?" in action else "?"
+    return action + sep + urllib.parse.urlencode(params)
 
 
 def looks_like_document(data: bytes) -> bool:
@@ -83,8 +87,10 @@ def download(file_id: str, out_path: str, kind: str) -> None:
             if retry is None:
                 print(f"ERROR: Drive returned an HTML page with no download form "
                       f"for {file_id} ({html_title(data)}). Possible quota limit "
-                      "or permission problem.", file=sys.stderr)
-                sys.exit(2)
+                      "or permission problem — if this repeats across files, "
+                      "Drive is rate-limiting anonymous downloads: stop and "
+                      "retry later.", file=sys.stderr)
+                sys.exit(4)
             retry = urllib.parse.urljoin(url, retry)  # form actions can be relative
             if not safe_google_url(retry):
                 print(f"ERROR: Drive interstitial pointed to a non-Google URL, "

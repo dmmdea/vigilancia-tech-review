@@ -41,12 +41,15 @@ def find_soffice() -> str | None:
 def powerpoint_available() -> bool:
     if os.name != "nt":
         return False
-    res = subprocess.run(
-        ["powershell", "-NoProfile", "-Command",
-         "try { $p = New-Object -ComObject PowerPoint.Application; $p.Quit(); "
-         "exit 0 } catch { exit 1 }"],
-        capture_output=True, timeout=120,
-    )
+    try:
+        res = subprocess.run(
+            ["powershell", "-NoProfile", "-Command",
+             "try { $p = New-Object -ComObject PowerPoint.Application; $p.Quit(); "
+             "exit 0 } catch { exit 1 }"],
+            capture_output=True, timeout=120,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return False
     return res.returncode == 0
 
 
@@ -133,22 +136,26 @@ def main() -> None:
             shutil.copyfile(src, dst)
         backend = "copy"
     else:
-        # Detect backends FIRST: "nothing installed" (exit 2, environment) must
-        # never be conflated with "this one file failed" (exit 3, per-file).
+        # "Nothing installed" (exit 2, environment, stop the run) must never be
+        # conflated with "this one file failed" (exit 3, per-file). The COM
+        # probe is expensive (~7s, launches PowerPoint), so probe it lazily —
+        # only when soffice is absent or failed on this file.
         soffice = find_soffice()
-        has_ppt = powerpoint_available()
-        if not soffice and not has_ppt:
-            print("ERROR: no conversion backend installed. Install LibreOffice "
-                  "(https://libreoffice.org) or Microsoft PowerPoint.",
-                  file=sys.stderr)
-            sys.exit(2)
         if soffice and run_soffice(soffice, src, dst):
             backend = "soffice"
-        elif has_ppt and run_powerpoint(src, dst):
-            backend = "powerpoint"
         else:
-            print(f"ERROR: conversion failed for this file: {src}", file=sys.stderr)
-            sys.exit(3)
+            has_ppt = powerpoint_available()
+            if has_ppt and run_powerpoint(src, dst):
+                backend = "powerpoint"
+            elif not soffice and not has_ppt:
+                print("ERROR: no conversion backend installed. Install "
+                      "LibreOffice (https://libreoffice.org) or Microsoft "
+                      "PowerPoint.", file=sys.stderr)
+                sys.exit(2)
+            else:
+                print(f"ERROR: conversion failed for this file: {src}",
+                      file=sys.stderr)
+                sys.exit(3)
 
     try:
         pages = len(PdfReader(dst).pages)

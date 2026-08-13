@@ -62,12 +62,15 @@ name + the Drive file id). Drive allows duplicate filenames in one folder — th
 suffix is what prevents one student's deck from silently overwriting another's.
 
 ```bash
-python "$SKILL_DIR/scripts/drive_download.py" "<id>" "$WORK/decks/<safe-name>"            # kind=file
-python "$SKILL_DIR/scripts/drive_download.py" "<id>" "$WORK/decks/<safe-name>.pptx" --kind=gslides
+python "$SKILL_DIR/scripts/drive_download.py" "<id>" "$WORK/decks/<safe-name>__<id>.<ext>"          # kind=file
+python "$SKILL_DIR/scripts/drive_download.py" "<id>" "$WORK/decks/<safe-name>__<id>.pptx" --kind=gslides
 ```
 
-A failed download (exit ≠ 0) becomes a `NO REVISADO` row with the error as
-`status_reason` — never silently dropped.
+Exit 2 or 3 → `NO REVISADO` row for THAT file with the stderr error as
+`status_reason` — never silently dropped. **Exit 4 (Drive quota/rate-limit page)
+→ STOP the whole run**: Drive is throttling anonymous downloads; tell the user to
+wait (~30–60 min) and rerun, rather than mass-marking the remaining students as
+NO REVISADO.
 
 ### 3. Convert to PDF
 
@@ -89,6 +92,8 @@ concurrent agents. Each returns a single JSON object.
 
 **Fairness gate — validate every returned JSON:**
 - `pages_read == pages_total`, scores within 1.0–5.0, non-empty justifications.
+- If `verification_confidence` is alta/media, `age_months` must be a number —
+  a null age with confident verification silently disables the DQ filter.
 - Spot-check honesty: for at least one deck per batch, verify one slide citation from
   the justification against the actual PDF page (a lazy reviewer can echo
   `pages_total` without reading; a fabricated citation exposes it).
@@ -122,8 +127,10 @@ python "$SKILL_DIR/scripts/make_excel.py" "$WORK/results.json" \
 ```
 
 Pass EVERY listing JSON you produced (main folder + each subfolder). The script fails
-(exit 2) naming any reviewable file that has no row in results.json — the mechanical
-backstop for "nothing is silently dropped". Fix the missing rows; never work around it.
+(exit 2) naming any listed entry that has no row in results.json — decks, unsupported
+formats, and unexplored nested folders alike all need a row (reviewed or NO REVISADO).
+This is the mechanical backstop for "nothing is silently dropped". Fix the missing
+rows; never work around it.
 
 Sheets: **Ranking** (sorted, top-5 starred, DQ red, no-revisado gray), **Detalle**
 (slide-cited justifications), **Meta** (run parameters).
