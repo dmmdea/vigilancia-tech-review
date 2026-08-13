@@ -45,15 +45,22 @@ función (anuncio oficial, blog del fabricante, changelog, prensa confiable). Re
   lanzamiento de LO QUE EL ESTUDIANTE USÓ (p. ej. "GPT-5.3-turbo" cuenta desde el
   lanzamiento de esa versión, no del producto original).
 - Calcula `age_months` = meses (con un decimal) entre la fecha verificada y {{run_date}}.
-  Si la confianza es "baja", calcula con la fecha declarada.
+  Si la confianza es "baja", deja `age_months` en `null` (nunca presentes un número
+  no verificado como dato) y pon en `evidence_notes` el estimado calculado con la
+  fecha DECLARADA, diciendo explícitamente que es "estimado con la fecha DECLARADA,
+  no verificada".
 
 ### 4. Aplica el filtro de exclusión
 `disqualified = true` SOLO si con confianza alta/media:
-- la fecha verificada es más de 4 meses anterior a {{run_date}}, O
+- `age_months` > 4.0 (la fecha verificada es más de 4 meses anterior a {{run_date}}), O
 - es una herramienta general (ChatGPT, Gemini, Copilot, Claude, etc.) SIN una función
   específica reciente como tema central.
-Si la verificación es de confianza "baja", o la edad queda en zona gris (3.0–4.0 meses),
-NO descalifiques: agrega el flag "VERIFICAR FECHA" y explica en `evidence_notes`.
+Banda fronteriza (el error de verificación de fechas es real): si `age_months` queda
+entre 3.5 y 4.5, agrega SIEMPRE el flag "VERIFICAR FECHA" — tanto si descalificaste
+(4.0 < edad ≤ 4.5: DQ fronterizo que un humano debe confirmar) como si no
+(3.5 ≤ edad ≤ 4.0: válido fronterizo).
+Si la verificación es de confianza "baja", NO descalifiques nunca: agrega
+"VERIFICAR FECHA" y explica en `evidence_notes`.
 Si hay discrepancia relevante entre fecha declarada y verificada (>1 mes), agrega el
 flag "DISCREPANCIA FECHA".
 
@@ -83,13 +90,13 @@ NO regales nota: 3.0 es un trabajo correcto; 4.5+ exige evidencia sobresaliente.
   "verified_launch_date": "YYYY-MM-DD o YYYY-MM o \"\"",
   "verification_source": "URL",
   "verification_confidence": "alta|media|baja",
-  "age_months": 0.0,
+  "age_months": null,
   "disqualified": false,
   "dq_reason": "",
-  "scores": {"poc": 0.0, "impacto": 0.0, "comunicacion": 0.0},
+  "scores": {"poc": null, "impacto": null, "comunicacion": null},
   "flags": [],
   "pages_total": {{pages_total}},
-  "pages_read": 0,
+  "pages_read": null,
   "justification": {"poc": "", "impacto": "", "comunicacion": ""},
   "evidence_notes": ""
 }

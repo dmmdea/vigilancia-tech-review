@@ -59,6 +59,10 @@ def list_folder(folder_id: str) -> dict:
         print(f"ERROR: folder {folder_id} not accessible (HTTP {e.code}). "
               "Is it shared as 'anyone with the link'?", file=sys.stderr)
         sys.exit(2)
+    except OSError as e:  # URLError, timeouts, connection resets
+        print(f"ERROR: network error reaching Drive for folder {folder_id}: {e}",
+              file=sys.stderr)
+        sys.exit(2)
     if "accounts.google.com" in final_url:
         print(f"ERROR: folder {folder_id} requires sign-in (not public).",
               file=sys.stderr)
@@ -72,17 +76,25 @@ def list_folder(folder_id: str) -> dict:
               "The embeddedfolderview endpoint may have changed.", file=sys.stderr)
         sys.exit(3)
 
-    entry_re = re.compile(
-        r'<div class="flip-entry" id="entry-([\w-]+)".*?<a href="([^"]+)".*?'
-        r'flip-entry-title">([^<]*)</div>',
-        re.S,
-    )
+    # Parse each entry block independently: a malformed block must fail loudly,
+    # never be skipped (silent drop) or bridged into its neighbor (silent merge —
+    # which would attribute one student's file to another's name).
+    blocks = re.split(r'<div class="flip-entry" id="entry-', page)[1:]
     entries = []
-    for eid, href, title in entry_re.findall(page):
-        name = html_mod.unescape(title).strip()
-        href = html_mod.unescape(href)
+    for block in blocks:
+        id_m = re.match(r'([\w-]+)"', block)
+        href_m = re.search(r'<a href="([^"]+)"', block)
+        title_m = re.search(r'flip-entry-title">([^<]*)', block)
+        if not (id_m and href_m and title_m):
+            print("ERROR: an entry in the Drive listing could not be parsed "
+                  "(page layout changed?). Refusing to return a partial listing.",
+                  file=sys.stderr)
+            sys.exit(3)
+        name = html_mod.unescape(title_m.group(1)).strip()
+        href = html_mod.unescape(href_m.group(1))
         entries.append(
-            {"id": eid, "name": name, "kind": classify(href, name), "href": href}
+            {"id": id_m.group(1), "name": name,
+             "kind": classify(href, name), "href": href}
         )
     return {"folder_id": folder_id, "folder_name": folder_name, "entries": entries}
 

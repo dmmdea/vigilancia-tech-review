@@ -10,6 +10,7 @@ Usage:
 Verifies the payload is a real PPTX/PDF (magic bytes), not an HTML error page.
 Exit codes: 0 ok · 2 download failed / not accessible · 3 payload is not a document.
 """
+import os
 import re
 import sys
 import urllib.error
@@ -55,6 +56,17 @@ def looks_like_document(data: bytes) -> bool:
     return data[:4] == b"PK\x03\x04" or data[:5] == b"%PDF-" or data[:8] == b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
 
 
+def is_html(data: bytes) -> bool:
+    head = data[:32].lstrip(b"\xef\xbb\xbf \t\r\n").lower()
+    return head.startswith((b"<!doctype", b"<html"))
+
+
+def html_title(data: bytes) -> str:
+    m = re.search(rb"<title>([^<]*)</title>", data[:4096], re.I)
+    return ("page title: " + m.group(1).decode("utf-8", "replace").strip()
+            if m else "untitled HTML page")
+
+
 def download(file_id: str, out_path: str, kind: str) -> None:
     if not ID_RE.fullmatch(file_id):
         print(f"ERROR: '{file_id}' is not a valid Drive file id.", file=sys.stderr)
@@ -66,33 +78,51 @@ def download(file_id: str, out_path: str, kind: str) -> None:
                "&export=download&confirm=t")
     try:
         data, ctype = fetch(url)
-        if data[:15].lstrip().lower().startswith((b"<!doctype", b"<html")):
+        if is_html(data):
             retry = confirm_url_from_interstitial(data.decode("utf-8", "replace"))
-            if retry and safe_google_url(retry):
-                data, ctype = fetch(retry)
+            if retry is None:
+                print(f"ERROR: Drive returned an HTML page with no download form "
+                      f"for {file_id} ({html_title(data)}). Possible quota limit "
+                      "or permission problem.", file=sys.stderr)
+                sys.exit(2)
+            retry = urllib.parse.urljoin(url, retry)  # form actions can be relative
+            if not safe_google_url(retry):
+                print(f"ERROR: Drive interstitial pointed to a non-Google URL, "
+                      f"refusing to follow: {retry}", file=sys.stderr)
+                sys.exit(2)
+            data, ctype = fetch(retry)
     except urllib.error.HTTPError as e:
         print(f"ERROR: download failed for {file_id} (HTTP {e.code}).", file=sys.stderr)
         sys.exit(2)
-    except urllib.error.URLError as e:
-        print(f"ERROR: network error for {file_id}: {e.reason}", file=sys.stderr)
+    except OSError as e:  # URLError, resets, timeouts, incomplete reads
+        print(f"ERROR: network error for {file_id}: {e}", file=sys.stderr)
         sys.exit(2)
 
     if not looks_like_document(data):
-        print(f"ERROR: payload for {file_id} is not a PPTX/PDF (content-type {ctype}). "
-              "File may not be public or requires sign-in.", file=sys.stderr)
+        detail = html_title(data) if is_html(data) else f"content-type {ctype}"
+        print(f"ERROR: payload for {file_id} is not a PPTX/PDF ({detail}). "
+              "File may not be public, requires sign-in, or hit a quota page.",
+              file=sys.stderr)
         sys.exit(3)
 
+    parent = os.path.dirname(os.path.abspath(out_path))
+    os.makedirs(parent, exist_ok=True)
     with open(out_path, "wb") as f:
         f.write(data)
     print(f"OK {out_path} {len(data)} bytes")
 
 
 def main() -> None:
+    sys.stdout.reconfigure(encoding="utf-8")
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     kind = "file"
     for a in sys.argv[1:]:
         if a.startswith("--kind"):
-            kind = a.split("=", 1)[1] if "=" in a else "file"
+            kind = a.split("=", 1)[1] if "=" in a else ""
+    if kind not in ("file", "gslides"):
+        print(f"ERROR: invalid --kind '{kind}' (use file or gslides).",
+              file=sys.stderr)
+        sys.exit(1)
     if len(args) != 2:
         print(__doc__, file=sys.stderr)
         sys.exit(1)

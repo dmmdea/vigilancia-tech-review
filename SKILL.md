@@ -41,17 +41,25 @@ git repo. Let `RUN_DATE` = today (YYYY-MM-DD).
 python "$SKILL_DIR/scripts/drive_list.py" "<folder-url>" > "$WORK/listing.json"
 ```
 
-- Exit 2 → tell the user the folder is not public and stop.
-- Keep entries with kind `file` whose name ends in `.pptx`/`.ppt`/`.pdf`, plus every
-  `gslides` entry. Entries of kind `folder`: list each subfolder once (one level deep)
-  and include its decks — students sometimes upload into per-group subfolders.
+- Exit 2 → tell the user the folder is not public (or the network failed) and stop.
+- Exit 3 → Drive's page layout changed or an entry failed to parse; STOP the run and
+  say so. NEVER proceed with a partial listing and never treat a parse failure as an
+  empty folder.
+- Keep entries with kind `file` whose name ends in `.pptx`/`.ppt`/`.pdf`
+  (**case-insensitive** — `DECK.PPTX` counts), plus every `gslides` entry. Entries of
+  kind `folder`: list each subfolder once (one level deep) and include its decks —
+  students sometimes upload into per-group subfolders. A `folder` found INSIDE a
+  subfolder is not explored: add a `NO REVISADO` row "subcarpeta anidada no explorada"
+  naming it, so it is visible to the humans.
 - Any other entry (docs, sheets, images, zips): do NOT review, but record it for the
   final report and add it to the Excel as `NO REVISADO` / "formato no soportado".
-- Empty folder → report "no submissions yet" and stop.
+- Empty folder (exit 0, zero entries) → report "no submissions yet" and stop.
 
 ### 2. Download every deck
 
-For each entry: sanitize the name into a safe filename (keep the original in metadata).
+For each entry: build the local filename as `<safe-name>__<drive-id>.<ext>` (sanitized
+name + the Drive file id). Drive allows duplicate filenames in one folder — the id
+suffix is what prevents one student's deck from silently overwriting another's.
 
 ```bash
 python "$SKILL_DIR/scripts/drive_download.py" "<id>" "$WORK/decks/<safe-name>"            # kind=file
@@ -67,8 +75,10 @@ A failed download (exit ≠ 0) becomes a `NO REVISADO` row with the error as
 python "$SKILL_DIR/scripts/convert_to_pdf.py" "$WORK/decks/<name>" "$WORK/pdf/<name>.pdf"
 ```
 
-Capture `pages` from the JSON output. Exit 2 (no backend) → tell the user to install
-LibreOffice and stop. Exit 3 → `NO REVISADO` row with reason.
+Capture `pages` from the JSON output. Exit 2 = environment problem (no backend
+installed, or pypdf missing) → tell the user what to install and stop the whole run.
+Exit 3 = THIS file failed (corrupt, password-protected, 0 pages) → `NO REVISADO` row
+with the stderr reason, continue with the other files.
 
 ### 4. Dispatch one reviewer sub-agent per deck — Sonnet, parallel batches
 
@@ -79,6 +89,9 @@ concurrent agents. Each returns a single JSON object.
 
 **Fairness gate — validate every returned JSON:**
 - `pages_read == pages_total`, scores within 1.0–5.0, non-empty justifications.
+- Spot-check honesty: for at least one deck per batch, verify one slide citation from
+  the justification against the actual PDF page (a lazy reviewer can echo
+  `pages_total` without reading; a fabricated citation exposes it).
 - On any violation: re-dispatch that deck ONCE with a note about what was invalid.
   Still invalid → `NO REVISADO` row, reason "revisión incompleta", flag for humans.
 - Never edit a reviewer's scores. If a verdict looks off, add a flag — humans decide.
@@ -89,21 +102,28 @@ Build `$WORK/results.json`:
 
 ```json
 {"run_date": "<RUN_DATE>", "folder_url": "<url>", "results": [ <one reviewer JSON per deck,
-  plus for each failed/skipped file: {"file": "...", "status": "no_revisado",
-  "status_reason": "...", "disqualified": false, "flags": []}> ]}
+  plus for each failed/skipped file: {"id": "<drive-file-id>", "file": "...",
+  "status": "no_revisado", "status_reason": "...", "disqualified": false, "flags": []}> ]}
 ```
 
-Reviewed decks get `"status": "revisado"`. Overwrite each reviewer's `file` field with
-the ORIGINAL Drive filename from your own listing metadata (reviewers sometimes echo
-the PDF name instead). Do not compute final grades yourself —
-`make_excel.py` does it (single source of truth: 0.50/0.25/0.25, DQ → 1.0).
+Reviewed decks get `"status": "revisado"`. For EVERY row (reviewed or not) you add two
+fields from your own listing metadata: `"id"` (the Drive file id — the identity key
+for the top-5 and the completeness check) and `"file"` overwritten with the ORIGINAL
+Drive filename (reviewers sometimes echo the PDF name instead). Do not compute final
+grades yourself — `make_excel.py` does it (single source of truth: 0.50/0.25/0.25,
+DQ → 1.0; it also downgrades any reviewed row with invalid scores to NO REVISADO).
 
 ### 6. Generate the Excel
 
 ```bash
 python "$SKILL_DIR/scripts/make_excel.py" "$WORK/results.json" \
-  "$WORK/Resultados-Vigilancia-Tecnologica-<RUN_DATE>.xlsx"
+  "$WORK/Resultados-Vigilancia-Tecnologica-<RUN_DATE>.xlsx" \
+  --listing="$WORK/listing.json" --listing="$WORK/sub-<name>.json"  # one per listed folder
 ```
+
+Pass EVERY listing JSON you produced (main folder + each subfolder). The script fails
+(exit 2) naming any reviewable file that has no row in results.json — the mechanical
+backstop for "nothing is silently dropped". Fix the missing rows; never work around it.
 
 Sheets: **Ranking** (sorted, top-5 starred, DQ red, no-revisado gray), **Detalle**
 (slide-cited justifications), **Meta** (run parameters).
@@ -132,7 +152,9 @@ Remind: **the official grade requires human TA review** — this is a shortlist,
 - Every file in the folder appears in the Excel — reviewed, DQ'd, or NO REVISADO with
   a reason. Nothing is silently skipped.
 - Launch dates are verified by web search; the deck's claim alone is never trusted.
-- Gray zone (3–4 months) or low-confidence verification → flag `VERIFICAR FECHA`,
-  never auto-DQ.
+  Low-confidence verification → `age_months` stays null (estimate goes to
+  evidence_notes, labeled as declared-date-based), flag `VERIFICAR FECHA`, never DQ.
+- Border band 3.5–4.5 months always carries flag `VERIFICAR FECHA` (DQ applies above
+  4.0 per the assignment rule, but a human confirms borderline DQs).
 - Student files and results stay out of any git repo and out of public artifacts.
 - Do not fabricate scores for unreadable decks — mark them NO REVISADO.
