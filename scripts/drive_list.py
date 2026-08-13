@@ -21,7 +21,9 @@ import urllib.request
 
 # Windows defaults std streams to cp1252; names and messages are non-ASCII.
 for _s in (sys.stdout, sys.stderr):
-    if hasattr(_s, "reconfigure"):
+    # Only touch the process's own console streams — never a stream an
+    # importing caller substituted (reconfiguring theirs corrupts their file).
+    if _s in (sys.__stdout__, sys.__stderr__) and hasattr(_s, "reconfigure"):
         _s.reconfigure(encoding="utf-8")
 
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) vigilancia-tech-review/1.0"

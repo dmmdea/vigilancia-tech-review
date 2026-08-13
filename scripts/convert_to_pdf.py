@@ -23,7 +23,9 @@ import tempfile
 
 # Windows defaults std streams to cp1252; names and messages are non-ASCII.
 for _s in (sys.stdout, sys.stderr):
-    if hasattr(_s, "reconfigure"):
+    # Only touch the process's own console streams — never a stream an
+    # importing caller substituted (reconfiguring theirs corrupts their file).
+    if _s in (sys.__stdout__, sys.__stderr__) and hasattr(_s, "reconfigure"):
         _s.reconfigure(encoding="utf-8")
 
 try:
@@ -58,7 +60,9 @@ def powerpoint_available() -> bool:
     return res.returncode == 0
 
 
-def run_soffice(exe: str, src: str, dst: str) -> bool:
+def run_soffice(exe: str, src: str, dst: str) -> str:
+    """Returns 'ok', 'failed' (this file), or 'unusable' (binary can't run —
+    counts as no-backend, not as a per-file failure)."""
     outdir = os.path.dirname(os.path.abspath(dst)) or "."
     os.makedirs(outdir, exist_ok=True)
     produced = os.path.join(
@@ -73,17 +77,18 @@ def run_soffice(exe: str, src: str, dst: str) -> bool:
         )
     except subprocess.TimeoutExpired:
         print("soffice timed out after 600s.", file=sys.stderr)
-        return False
+        return "failed"
     except OSError as e:
-        print(f"soffice could not be executed: {e}", file=sys.stderr)
-        return False
+        print(f"soffice could not be executed (broken install?): {e}",
+              file=sys.stderr)
+        return "unusable"
     if res.returncode != 0 or not os.path.exists(produced):
         print(f"soffice failed (rc={res.returncode}): "
               f"{(res.stderr or res.stdout).strip()[:400]}", file=sys.stderr)
-        return False
+        return "failed"
     if os.path.abspath(produced) != os.path.abspath(dst):
         shutil.move(produced, dst)
-    return True
+    return "ok"
 
 
 PS_TEMPLATE = r"""
@@ -148,16 +153,18 @@ def main() -> None:
         # probe is expensive (~7s, launches PowerPoint), so probe it lazily —
         # only when soffice is absent or failed on this file.
         soffice = find_soffice()
-        if soffice and run_soffice(soffice, src, dst):
+        sres = run_soffice(soffice, src, dst) if soffice else "absent"
+        if sres == "ok":
             backend = "soffice"
         else:
             has_ppt = powerpoint_available()
             if has_ppt and run_powerpoint(src, dst):
                 backend = "powerpoint"
-            elif not soffice and not has_ppt:
-                print("ERROR: no conversion backend installed. Install "
-                      "LibreOffice (https://libreoffice.org) or Microsoft "
-                      "PowerPoint.", file=sys.stderr)
+            elif sres in ("absent", "unusable") and not has_ppt:
+                # No WORKING backend anywhere: environment problem, stop the run.
+                print("ERROR: no working conversion backend. Install (or "
+                      "repair) LibreOffice (https://libreoffice.org) or "
+                      "Microsoft PowerPoint.", file=sys.stderr)
                 sys.exit(2)
             else:
                 print(f"ERROR: conversion failed for this file: {src}",

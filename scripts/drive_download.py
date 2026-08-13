@@ -22,7 +22,9 @@ import urllib.request
 
 # Windows defaults std streams to cp1252; names and messages are non-ASCII.
 for _s in (sys.stdout, sys.stderr):
-    if hasattr(_s, "reconfigure"):
+    # Only touch the process's own console streams — never a stream an
+    # importing caller substituted (reconfiguring theirs corrupts their file).
+    if _s in (sys.__stdout__, sys.__stderr__) and hasattr(_s, "reconfigure"):
         _s.reconfigure(encoding="utf-8")
 
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) vigilancia-tech-review/1.0"
@@ -91,8 +93,15 @@ def download(file_id: str, out_path: str, kind: str) -> None:
             retry = confirm_url_from_interstitial(data.decode("utf-8", "replace"))
             if retry is None:
                 body = data[:8192].decode("utf-8", "replace").lower()
-                quota = ("quota" in body or "too many people have" in body
-                         or "at this time" in body)
+                # Quota-specific needles only (EN + ES — Google localizes by
+                # geo); ambiguous phrases like "at this time" would falsely
+                # stop the run on a merely-restricted file. The orchestrator
+                # additionally treats repeated formless-HTML exit 2s as
+                # throttling (see SKILL.md), so a missed match here is not
+                # silent.
+                quota = ("quota" in body or "cuota" in body
+                         or "too many users" in body
+                         or "demasiados usuarios" in body)
                 if quota:
                     print(f"ERROR: Drive is rate-limiting anonymous downloads "
                           f"(quota page for {file_id}: {html_title(data)}). "

@@ -33,7 +33,9 @@ from openpyxl.utils import get_column_letter
 
 # Windows defaults std streams to cp1252; names and messages are non-ASCII.
 for _s in (sys.stdout, sys.stderr):
-    if hasattr(_s, "reconfigure"):
+    # Only touch the process's own console streams — never a stream an
+    # importing caller substituted (reconfiguring theirs corrupts their file).
+    if _s in (sys.__stdout__, sys.__stderr__) and hasattr(_s, "reconfigure"):
         _s.reconfigure(encoding="utf-8")
 
 HEADER_FILL = PatternFill("solid", fgColor="1F2937")
@@ -135,12 +137,16 @@ def check_completeness(results: list, listing_paths: list) -> None:
         except (OSError, json.JSONDecodeError) as e:
             print(f"ERROR: cannot read listing {p}: {e}", file=sys.stderr)
             sys.exit(2)
-        if "entries" not in listing or "folder_id" not in listing:
+        if (not isinstance(listing, dict)
+                or not isinstance(listing.get("entries"), list)
+                or not listing.get("folder_id")
+                or not all(isinstance(e, dict) for e in listing["entries"])):
             print(f"ERROR: {p} is not a drive_list.py listing "
-                  "(missing entries/folder_id).", file=sys.stderr)
+                  "(needs folder_id and a list of entry objects).",
+                  file=sys.stderr)
             sys.exit(2)
-        explored_folders.add(listing.get("folder_id"))
-        entries.extend(listing.get("entries", []))
+        explored_folders.add(listing["folder_id"])
+        entries.extend(listing["entries"])
     for e in entries:
         if e.get("kind") == "folder" and e.get("id") in explored_folders:
             continue

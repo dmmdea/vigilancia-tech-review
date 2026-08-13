@@ -70,7 +70,10 @@ Exit 2 or 3 → `NO REVISADO` row for THAT file with the stderr error as
 `status_reason` — never silently dropped. **Exit 4 (Drive quota/rate-limit page)
 → STOP the whole run**: Drive is throttling anonymous downloads; tell the user to
 wait (~30–60 min) and rerun, rather than mass-marking the remaining students as
-NO REVISADO.
+NO REVISADO. **Backstop:** the quota detector keys on page text and can miss a
+localized wording — if 3 consecutive files fail with "HTML page with no download
+form", treat it as throttling and STOP the run too (do not record those as
+NO REVISADO).
 
 ### 3. Convert to PDF
 
