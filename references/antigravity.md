@@ -1,7 +1,26 @@
 # Platform adapter — Gemini (Antigravity)
 
-How this skill's capability requirements map onto Antigravity (`agy`). Trust
-your actual tool list over this table when they disagree.
+How this skill's capability requirements map onto Antigravity. Trust your
+actual tool list over this table when they disagree.
+
+**Live-verified 2026-08-15** on Antigravity 2.8.1 (Windows hub desktop app,
+model "Gemini 3.7 Flash High"): single-PNG review E2E — the agent opened the
+local image by absolute path, ran real web search, and its date verification
+matched Claude and Codex exactly (same tool, same launch date, same
+confidence). Wrote the JSON to the requested absolute output path in ~2 min.
+`validate_review.py` correctly rejected a first pass missing the extended
+fields; one retry message citing the exact problems produced a fully valid
+review (exit 0) — the re-dispatch-once rule works unchanged on this harness.
+
+Operational notes from that run:
+- **2.8.1 ships no CLI** — reviews are dispatched through the hub's agent
+  conversation (paste the filled template) or via UI automation. Give the
+  agent ABSOLUTE paths for both materials and the output JSON; "this folder"
+  is ambiguous inside the hub.
+- **Launcher gotcha:** if Antigravity is started from a process that has
+  `ELECTRON_RUN_AS_NODE=1` in its environment (any VS Code extension host,
+  some CI shells), the exe exits code 0 instantly with no window and no log
+  line. Clear that variable before launching.
 
 | Capability | Antigravity mechanism |
 |---|---|
