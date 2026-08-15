@@ -68,10 +68,10 @@ def describe(items, use_images):
         suffix = f"\n   Nota: {it['note']}" if it.get("note") else ""
         if carried:
             suffix += f"\n   Nota: {carried}"
-        if it.get("truncated_from"):
-            # pages is the FULL count — the available count is what was
-            # actually rasterized (round-2 finding: "solo 80 de 80")
-            avail = len(it.get("page_images") or []) or it.get("pages")
+        if it.get("truncated_from") and use_images:
+            # only meaningful in image mode: in PDF mode the reviewer holds
+            # the COMPLETE file, nothing is truncated for them (round-3)
+            avail = len(it.get("page_images") or [])
             suffix += (f"\n   AVISO: material truncado — solo {avail} de "
                        f"{it['truncated_from']} páginas disponibles; el resto "
                        "NO fue revisado (flag REVISAR MANUALMENTE).")
@@ -277,6 +277,19 @@ def main():
             "materials_expected": len(labels),
             "pdf_pages_total": sum(it.get("pages") or 0 for it in items
                                    if it["kind"] == "pdf"),
+            # citable units = everything a spot-checker could ask the
+            # reviewer to cite: PDF pages (only when the count is a REAL
+            # number — unreadable is unknown, not zero) + each image + each
+            # video frame + each text item. The 1-page spot-check exemption
+            # keys on THIS, never on pdf pages alone (a png/video/docx
+            # bundle has 0 pdf pages and plenty to cite).
+            "citable_units": sum(
+                (it.get("pages") if isinstance(it.get("pages"), int) else 0)
+                if it["kind"] == "pdf"
+                else len(it.get("frames") or []) if it["kind"] == "video"
+                else 1 if it["kind"] in ("image", "text")
+                else 0
+                for it in items),
             "was_no_deck": was_no_deck,
             "no_deck_note": note,
             "carried_forward": [

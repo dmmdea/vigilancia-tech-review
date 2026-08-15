@@ -258,12 +258,14 @@ def main():
                              "entregado con la misma rúbrica.")
                 if bdef.get("carried_forward"):
                     flags.append("EVIDENCIA DE ENVIO ANTERIOR INCLUIDA")
-                # the bundle wrapper has no pages_total; give the 1-page
-                # exemption the bundle's own page knowledge (0 pdf pages =
-                # image-only submission = no slide numbers exist either)
+                # 1-page exemption ONLY when the bundle genuinely has a
+                # single citable unit (one 1-page PDF, one image). Keying on
+                # pdf pages alone silently disarmed SPOT-CHECK FALLIDO for
+                # every png/video/docx bundle (round-3 critical finding).
                 bundle_sc = dict(bundle)
-                bpages = bdef.get("pdf_pages_total")
-                if bpages is not None and bpages <= 1:
+                cu = bdef.get("citable_units")
+                if (bdef.get("materials_expected") == 1
+                        and isinstance(cu, int) and cu <= 1):
                     bundle_sc["pages_total"] = 1
                 sf, sn = spotcheck_annotations(bundle_sc)
                 flags += sf
