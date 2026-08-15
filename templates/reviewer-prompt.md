@@ -51,10 +51,12 @@ prensa confiable). Reglas:
   lanzamiento de LO QUE EL ESTUDIANTE USÓ (p. ej. una versión "turbo" cuenta desde el
   lanzamiento de ESA versión, no del producto original).
 - Calcula `age_months` = meses (con un decimal) entre la fecha verificada y {{run_date}}.
-  Si la confianza es "baja", deja `age_months` en `null` (nunca presentes un número
-  no verificado como dato) y pon en `evidence_notes` el estimado calculado con la
-  fecha DECLARADA, diciendo explícitamente que es "estimado con la fecha DECLARADA,
-  no verificada".
+  Con confianza "alta" o "media", `age_months` DEBE ser un número (se valida
+  mecánicamente). Si la confianza es "baja", deja `age_months` en `null` (nunca
+  presentes un número no verificado como dato) y pon en `evidence_notes` el estimado
+  calculado con la fecha DECLARADA, diciendo explícitamente que es "estimado con la
+  fecha DECLARADA, no verificada". Si no encuentras NINGUNA fecha, deja el campo de
+  fecha como "" (cadena vacía) — nunca escribas "desconocida" ni frases.
 
 ### 4. Aplica el filtro de exclusión
 `disqualified = true` SOLO si con confianza alta/media:
@@ -94,10 +96,9 @@ NO regales nota: 3.0 es un trabajo correcto; 4.5+ exige evidencia sobresaliente.
 - `student`: solo el nombre, opcionalmente "(código NNNN)". Sin comentarios.
 - `tool`: máximo 70 caracteres. El detalle largo → `observations`.
 - `flags`: SOLO de esta lista cerrada — VERIFICAR FECHA · DISCREPANCIA FECHA ·
-  ENTREGA SIN PPT · REVISAR MANUALMENTE · SIN EVIDENCIA PROPIA ·
-  IMPACTO NO CUANTIFICADO · HERRAMIENTA GENERAL - FUNCION ESPECIFICA ·
-  EVIDENCIA NO LEGIBLE. Cualquier otra observación libre va en `observations`,
-  no como flag.
+  REVISAR MANUALMENTE · SIN EVIDENCIA PROPIA · IMPACTO NO CUANTIFICADO ·
+  HERRAMIENTA GENERAL - FUNCION ESPECIFICA · EVIDENCIA NO LEGIBLE.
+  Cualquier otra observación libre va en `observations`, no como flag.
 
 ### 7. Devuelve SOLO este JSON (sin texto adicional)
 ```json

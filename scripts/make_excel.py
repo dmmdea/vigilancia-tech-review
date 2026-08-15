@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the two-sheet results Excel from the orchestrator's results JSON.
+"""Build the three-sheet results Excel (Ranking, Detalle, Meta) from the orchestrator's results JSON.
 
 Usage:
     python make_excel.py <results.json> <output.xlsx> [--listing=<listing.json>]...
@@ -288,8 +288,9 @@ def main() -> None:
     meta["A3"], meta["B3"] = "Regla de corte", ("> 4 meses desde lanzamiento verificado → 1.0; "
                                                 "zona 3.5–4.5 meses lleva flag VERIFICAR FECHA")
     meta["A4"], meta["B4"] = "Ponderación", "PoC 50% · Impacto 25% · Comunicación 25%"
-    meta["A5"], meta["B5"] = "Generado por", ("vigilancia-tech-review (sub-agentes Sonnet; "
-                                              "revisión humana requerida para nota oficial)")
+    meta["A5"], meta["B5"] = "Generado por", ("vigilancia-tech-review (revisores de IA con "
+                                              "contexto limpio; revisión humana "
+                                              "requerida para nota oficial)")
     meta.column_dimensions["A"].width = 20
     meta.column_dimensions["B"].width = 80
 

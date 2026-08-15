@@ -21,6 +21,7 @@ DONE or explicitly deferred with a reason.
 | R11 | Repo branded **Universidad de los Andes** | pending (item O) |
 | R12 | Custom license: public repo, made as part of TA job for Uniandes; only Uniandes teachers/TAs/personnel may modify/improve; others download/test for academic purposes only. Recommend license type + adjust | pending (item P) |
 | R13 | **Merge and deploy when all is green**; quality bar: reliable to a Uniandes-MBA standard — authorization granted in-conversation | active |
+| R14 | Skill seamless and **frictionless for the operator** | preflight.py + quickstart (item R) |
 
 Standing constraints from earlier in the session: every student reviewed
 regardless of file format (fairness rule); vision-first, convert only what the
@@ -95,5 +96,8 @@ VERIFIED non-problems (recorded so nobody "fixes" them):
        restricted to Uniandes teachers/TAs/staff; bilingual LICENSE.md; README
        license sections; flag to Daniel that work-for-hire ownership should be
        confirmed with Uniandes legal (not legal advice)
+- [ ] R. Operator frictionlessness (R14): scripts/preflight.py one-command
+       environment check (deps, backends, Spanish verdicts, exit 0/1); wired
+       as step 0 of SKILL.md
 - [ ] Q. Evidence addendum: mutation tests red/green log (reconciliation bug
        found by mutation 1 and fixed: norm_tool 4→2 words)

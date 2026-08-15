@@ -6,7 +6,7 @@ on the multi-agent version your model preset selects.
 
 | Capability | Codex mechanism |
 |---|---|
-| Read PDF pages visually | **Not native — ALWAYS rasterize first**: `python scripts/pdf_to_images.py <pdf> <outdir>` and give the reviewer the PNG list (`build_bundles.py --images` emits image instructions). Codex file reads are text; PDFs must become images to be SEEN. |
+| Read PDF pages visually | **Not native — ALWAYS rasterize first**: `python scripts/prepare_materials.py <work> --rasterize` (which drives pdf_to_images.py per PDF), then `build_bundles.py <work> --images --all` so every student gets PNG-page instructions. Codex file reads are text; PDFs must become images to be SEEN. |
 | View images | `view_image` on each PNG (pages, keyframes, screenshots) |
 | Sub-reviewer with clean context | Requires `[features] multi_agent = true` in `~/.codex/config.toml`. `spawn_agent {fork_turns: "none"}` for a clean-context child; on Codex 0.145+ you may attach a role file via `agent_type`. |
 | Mid-tier vision model | Set BOTH `model` AND `reasoning_effort` explicitly on every spawn (setting `model` alone silently resets the child's effort to that model's default). Pick a mid-tier vision-capable preset from your spawn allowlist — never copy a model name from this file. |

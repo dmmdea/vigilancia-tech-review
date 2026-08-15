@@ -1,6 +1,6 @@
 ---
 name: vigilancia-tech-review
-description: Use when the teaching team needs to review, score, and rank MBA "Vigilancia Tecnológica" student presentations — from a link-shared Google Drive folder OR a local/Drive-Desktop folder of Canvas submissions. Reads EVERY submitted file whatever its format (pptx, pdf, docx, html, png, mp4, xlsx, zip) with one fresh-context AI reviewer per student, web-verifies each tool's launch date, disqualifies tools older than 4 months, scores PoC/Impacto/Comunicación (1.0–5.0, weighted 50/25/25), and produces a two-sheet Excel ranking with the top-5 candidates for human TA review. Harness-agnostic — adapters for Claude Code, Codex (GPT), and Antigravity (Gemini) in references/. Triggers: "revisar presentaciones vigilancia tecnológica", "calificar las ppt de los estudiantes", "ranking vigilancia tecnológica", "escoger las mejores presentaciones".
+description: Use when the teaching team needs to review, score, and rank MBA "Vigilancia Tecnológica" student presentations — from a link-shared Google Drive folder OR a local/Drive-Desktop folder of Canvas submissions. Reads EVERY submitted file whatever its format (pptx, pdf, docx, html, png, mp4, xlsx, zip) with one fresh-context AI reviewer per student, web-verifies each tool's launch date, disqualifies tools older than 4 months, scores PoC/Impacto/Comunicación (1.0–5.0, weighted 50/25/25), and produces a three-sheet Excel ranking with the top-5 candidates for human TA review. Harness-agnostic — adapters for Claude Code, Codex (GPT), and Antigravity (Gemini) in references/. Triggers: "revisar presentaciones vigilancia tecnológica", "calificar las ppt de los estudiantes", "ranking vigilancia tecnológica", "escoger las mejores presentaciones".
 ---
 
 # vigilancia-tech-review
@@ -77,6 +77,17 @@ For a Drive source: folder shared as **"anyone with the link"**. No credentials.
 `SKILL_DIR` = this skill's directory. `WORK` = a fresh working directory.
 `RUN_DATE` = today (YYYY-MM-DD). Student files stay out of any git repo.
 
+### 0. Preflight — one command, before anything
+
+```bash
+python "$SKILL_DIR/scripts/preflight.py" [--rasterize]
+```
+
+Verifies every dependency and conversion backend with a Spanish verdict per
+item; exit 1 = fix what it names before touching student files. Pass
+`--rasterize` on harnesses without native PDF-page vision. Never discover a
+missing backend halfway through 75 students.
+
 > **Windows MAX_PATH — read before anything else.** Student folder names plus filenames
 > routinely exceed 260 chars, and Python does NOT auto-apply the `\\?\` prefix:
 > file I/O then fails *silently per-file*, which looks exactly like "the student didn't
@@ -118,6 +129,11 @@ Exit 2/3 → `NO REVISADO` row for THAT file with the stderr reason. **Exit 4 (q
 → STOP the whole run** and retry in 30–60 min. Backstop: 3 consecutive "HTML page with
 no download form" failures = throttling, stop too.
 
+**Then synthesize the plan from the downloads**: run
+`python "$SKILL_DIR/scripts/local_list.py" "$WORK/decks" "$WORK"` over the download
+folder (flat shape) — the rest of the pipeline (steps 2–6) consumes its
+`review_plan.json` exactly as in the local-folder path.
+
 ### 2. Make every file readable — whatever its format
 
 ```bash
@@ -145,13 +161,16 @@ Writes `materials.json`. It prints any video lacking a transcript; transcribe th
 Fix every `ERROR` item it reports before moving on — each one is a student at risk of
 losing credit for evidence they did submit.
 
-**Harness without native PDF-page vision** (see your adapter): also run
+**Harness without native PDF-page vision** (see your adapter): run step 2 with
+`--rasterize` — it invokes `pdf_to_images.py` on every produced PDF and records
+`page_images` (+ `truncated_from` past the page cap) on each item — then pass
+`--images --all` to `build_bundles.py` below so EVERY student (single-deck ones
+included) gets image instructions. Without `--rasterize`, `--images` has nothing
+to point at and silently degrades to PDF instructions the reviewer cannot follow.
 
-```bash
-python "$SKILL_DIR/scripts/pdf_to_images.py" "<pdf>" "<outdir>"   # per PDF
-```
-
-and pass `--images` to `build_bundles.py` below so instructions point at the PNGs.
+If a separate slides→PDF conversion step produced a `convert_results.json`
+(`{folder_id: {pdf, pages}}`), leave it in `$WORK` — `build_bundles.py` uses it
+to include decks whose folders aren't in `materials.json`.
 
 ### 3. Build the review targets
 
@@ -175,17 +194,20 @@ Templates: `templates/reviewer-prompt.md` (single deck) ·
 **The fairness gate is mechanical and mandatory — run it on EVERY review:**
 
 ```bash
-python "$SKILL_DIR/scripts/validate_review.py" "<review.json>" \
-    --expect-pages=N            # deck reviews
-    --expect-materials="a|b|c"  # bundle reviews
-    --normalized-out="<review.json>"
+# deck reviews:
+python "$SKILL_DIR/scripts/validate_review.py" "<review.json>" --expect-pages=N --normalized-out="<review.json>"
+# bundle reviews ('|'-separated BARE labels — no «guillemets»):
+python "$SKILL_DIR/scripts/validate_review.py" "<review.json>" --expect-materials="a|b|c" --normalized-out="<review.json>"
 ```
 
 Exit 2 → re-dispatch that student ONCE with the `problems` list appended. Still
 failing → `NO REVISADO`, reason "revisión incompleta", flag for humans. The validator
 also normalizes fields (strict dates, bare student names, ≤70-char tool, controlled
 flag vocabulary; everything else moves to `observations`) — content is preserved,
-scores and justifications are never edited.
+scores and justifications are never edited. Note the flag vocabulary split:
+reviewers emit the subset in the templates; `ENTREGA DUPLICADA`, `SPOT-CHECK
+FALLIDO` and `EVIDENCIA DE ENVIO ANTERIOR INCLUIDA` are assigned by the
+assembler, and `EMPATE TOP5` / `EDAD SIN CALCULAR` by `make_excel.py`.
 
 **Spot-check honesty on BOTH passes** — every ~4th review, deck AND bundle alike
 (the pilot spot-checked only deck reviews; the #1-ranked student came from the
@@ -202,7 +224,9 @@ python "$SKILL_DIR/scripts/assemble_results.py" "$WORK" "<RUN_DATE>" \
 ```
 
 Expects `deck_reviews.json` / `bundle_reviews.json` in `$WORK` (shape:
-`{"reviewed": [{"folder_id", "result", "problems": [], "spotcheck": {...}|null}]}`).
+`{"reviewed": [{"folder_id", "result", "problems": [], "spotcheck": null | {"plausible": bool, "notes": str}}]}`
+— a spotcheck object without a `plausible` key is treated as INCONCLUSIVE, never
+as failed).
 Produces `results.json`: one row per submitted FILE — one graded row per student, the
 rest NO REVISADO with reasons pointing at the graded row. It re-applies the validator
 normalization (defense in depth) and runs **same-tool reconciliation**: students whose

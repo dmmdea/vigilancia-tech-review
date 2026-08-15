@@ -26,11 +26,16 @@ for _s in (sys.stdout, sys.stderr):
         _s.reconfigure(encoding="utf-8")
 
 try:
-    import fitz  # PyMuPDF
+    import pymupdf as fitz  # modern name; the old 'import fitz' prints a
+                            # deprecation warning ON STDOUT that corrupts the
+                            # JSON contract for callers that parse our output
 except ImportError:
-    print("ERROR: PyMuPDF no está instalado. Ejecuta: pip install pymupdf",
-          file=sys.stderr)
-    sys.exit(2)
+    try:
+        import fitz  # very old PyMuPDF without the pymupdf alias
+    except ImportError:
+        print("ERROR: PyMuPDF no está instalado. Ejecuta: pip install pymupdf",
+              file=sys.stderr)
+        sys.exit(2)
 
 
 def main():

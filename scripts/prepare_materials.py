@@ -278,7 +278,19 @@ def rasterize_pdf(pdf_path, outdir):
         sys.exit(2)          # environment problem (pymupdf missing): stop
     if r.returncode != 0:
         return [], None, r.stderr.strip()[:200]
-    info = json.loads(r.stdout)
+    # tolerate library banners/warnings before the JSON line: parse the first
+    # line that IS a JSON object rather than trusting stdout to be clean
+    info = None
+    for line in r.stdout.splitlines():
+        line = line.strip()
+        if line.startswith("{"):
+            try:
+                info = json.loads(line)
+                break
+            except json.JSONDecodeError:
+                continue
+    if info is None:
+        return [], None, f"salida no-JSON de pdf_to_images: {r.stdout[:120]!r}"
     return info["images"], info.get("truncated_from"), ""
 
 

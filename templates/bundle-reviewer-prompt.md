@@ -57,8 +57,8 @@ empresarial.
 {{materials_block}}
 
 Al final reportarás en `materials_reviewed` la lista EXACTA de las etiquetas
-(«entre comillas») de todos los materiales que abriste. Debe incluir los
-{{materials_expected}}.
+de todos los materiales que abriste — el TEXTO de cada etiqueta tal cual,
+SIN las comillas «». Debe incluir los {{materials_expected}}.
 
 ## Instrucciones — sigue este orden
 
@@ -74,15 +74,18 @@ datos y transcripciones léelos completos.
 - Nombre del estudiante si aparece; si no, deja "".
 
 ### 3. Verifica la fecha real de lanzamiento por web
-Usa WebSearch para encontrar la fecha real de lanzamiento PÚBLICO (anuncio oficial, blog
+Usa tu herramienta de búsqueda web para encontrar la fecha real de lanzamiento PÚBLICO (anuncio oficial, blog
 del fabricante, changelog, prensa confiable). Reglas:
 - Cita la URL de la mejor fuente.
 - `verification_confidence`: "alta" (anuncio oficial con fecha), "media" (prensa/fuentes
   secundarias consistentes), "baja" (no concluyente o contradictorio).
 - Si la herramienta tiene versiones/funciones, cuenta la fecha de LO QUE EL ESTUDIANTE USÓ.
 - `age_months` = meses (un decimal) entre la fecha verificada y {{run_date}}.
-  Con confianza "baja" deja `age_months` en `null` y explica en `evidence_notes` el
-  estimado con la fecha DECLARADA, diciendo que NO está verificada.
+  Con confianza "alta" o "media", `age_months` DEBE ser un número (se valida
+  mecánicamente). Con confianza "baja" deja `age_months` en `null` y explica en
+  `evidence_notes` el estimado con la fecha DECLARADA, diciendo que NO está
+  verificada. Si no encuentras NINGUNA fecha, deja el campo de fecha como ""
+  (cadena vacía) — nunca escribas "desconocida" ni frases.
 
 ### 4. Aplica el filtro de exclusión
 `disqualified = true` SOLO si con confianza alta/media:
@@ -126,8 +129,8 @@ NO regales nota: 3.0 es un trabajo correcto; 4.5+ exige evidencia sobresaliente.
   "file": "{{primary_label}}",
   "student": "",
   "tool": "",
-  "declared_launch_date": "YYYY-MM-DD o YYYY-MM o \"\"",
-  "verified_launch_date": "YYYY-MM-DD o YYYY-MM o \"\"",
+  "declared_launch_date": "",
+  "verified_launch_date": "",
   "verification_source": "URL",
   "verification_confidence": "alta|media|baja",
   "age_months": null,

@@ -22,11 +22,20 @@ Writes: <workdir>/bundles.json — for each target: student identity, a
         expected material labels, and any carried-forward evidence records.
 
 Usage:
-    python build_bundles.py <workdir> [--images]
+    python build_bundles.py <workdir> [--images] [--all]
 
 --images: emit page-image instructions instead of PDF instructions for any
-material that carries a `page_images` list (produced by pdf_to_images.py) —
-for harnesses whose file reader cannot render PDF pages.
+material that carries a `page_images` list (populated by
+`prepare_materials.py --rasterize`) — for harnesses whose file reader cannot
+render PDF pages.
+--all: emit a bundle for EVERY student, including plain single-deck ones —
+required on non-PDF-vision harnesses (Codex, Antigravity), where the simple
+deck template cannot be used because its {{pdf_path}} would hand the
+reviewer a PDF it cannot read. Use together with --images.
+
+Exits 2 when any student the plan requires a bundle for has no materials, or
+a duplicate submission's authoritative folder cannot be resolved — both mean
+a student would silently lose their review; fix the inputs, never proceed.
 """
 import json
 import os
@@ -116,6 +125,7 @@ def main():
         sys.exit(1)
     work = args[0]
     use_images = "--images" in sys.argv[1:]
+    include_all = "--all" in sys.argv[1:]
 
     plan = load(work, "review_plan.json")
     materials = load(work, "materials.json")
@@ -130,6 +140,7 @@ def main():
     # and a silent miss here means carried-forward evidence never reaches the
     # reviewer AND the superseded folder gets a wasted duplicate review.
     superseded_of = {}
+    unresolved_superseded = []
     for e in plan["folders"]:
         if e["status"] != "no_deck" or "duplicada" not in e.get("no_deck_reason", ""):
             continue
@@ -147,6 +158,7 @@ def main():
         if auth_id:
             superseded_of[e["folder_id"]] = auth_id
         else:
+            unresolved_superseded.append(e["folder_name"])
             print(f"ERROR: entrega duplicada '{e['folder_name']}' sin carpeta "
                   "autoritativa resoluble — el arrastre de evidencia NO "
                   "ocurrirá y la carpeta podría revisarse dos veces. "
@@ -201,7 +213,8 @@ def main():
         needs_bundle = bool(
             (e["status"] == "no_deck" and items)          # (a) no deck at all
             or (e["status"] == "review" and e.get("evidence"))  # (b) deck+extras
-            or carried)                                    # (c) carry-forward
+            or carried                                     # (c) carry-forward
+            or (include_all and e["status"] == "review"))  # (d) --all
         if not needs_bundle:
             continue
 
@@ -218,6 +231,25 @@ def main():
             continue
 
         block, labels = describe(items, use_images)
+        was_no_deck = e["status"] == "no_deck"
+        # the {{no_deck_note}} text the bundle template requires — produced
+        # HERE so every orchestrator gets identical fairness framing
+        if was_no_deck:
+            note = ("**IMPORTANTE — este estudiante NO entregó una "
+                    "presentación de diapositivas.** Entregó el/los "
+                    "material(es) listados abajo. Evalúalo con la MISMA "
+                    "rúbrica y con justicia: el formato distinto NO es motivo "
+                    "de castigo automático ni de descalificación. Juzga el "
+                    "CONTENIDO. En 'comunicación' puedes considerar si el "
+                    "material funciona como una presentación de 3 minutos, "
+                    "pero no penalices el mero hecho de no ser un .pptx.")
+        elif len(labels) > 1:
+            note = ("**Este estudiante entregó una presentación MÁS material "
+                    "complementario.** Debes revisar TODO antes de calificar: "
+                    "la evidencia complementaria suele ser precisamente la "
+                    "prueba propia que sustenta la PoC.")
+        else:
+            note = ""
         bundles.append({
             "folder_id": fid,
             "student_name": e["student_name"],
@@ -226,7 +258,8 @@ def main():
             "materials_block": block,
             "material_labels": labels,
             "materials_expected": len(labels),
-            "was_no_deck": e["status"] == "no_deck",
+            "was_no_deck": was_no_deck,
+            "no_deck_note": note,
             "carried_forward": [
                 {"from_folder_id": it.get("carried_from"),
                  "label": it.get("label")} for it in carried],
@@ -238,6 +271,10 @@ def main():
     print(f"bundles: {len(bundles)}"
           + (f"  |  SIN MATERIALES (bloqueante): {len(missing_materials)}"
              if missing_materials else ""))
+    if missing_materials or unresolved_superseded:
+        # a student would silently lose their review — refuse to hand the
+        # orchestrator a bundles.json that looks complete
+        sys.exit(2)
     for b in bundles:
         cf = f" +{len(b['carried_forward'])} arrastrado(s)" if b["carried_forward"] else ""
         print(f"  {b['student_name'][:34]:34s} items={b['materials_expected']}"

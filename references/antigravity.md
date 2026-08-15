@@ -5,7 +5,7 @@ your actual tool list over this table when they disagree.
 
 | Capability | Antigravity mechanism |
 |---|---|
-| Read PDF pages visually | Gemini is natively multimodal, but Antigravity's file tools read text — **rasterize first**: `python scripts/pdf_to_images.py <pdf> <outdir>`, then view the PNGs (`build_bundles.py --images` emits image instructions). If your session's file/attachment tool demonstrably renders PDFs page-by-page, use it and skip rasterizing. |
+| Read PDF pages visually | Gemini is natively multimodal, but Antigravity's file tools read text — **rasterize first**: `python scripts/prepare_materials.py <work> --rasterize` (drives pdf_to_images.py per PDF), then `build_bundles.py <work> --images --all` so every student gets PNG-page instructions. If your session's file/attachment tool demonstrably renders PDFs page-by-page, use it and skip rasterizing. |
 | View images | your image-viewing/file tool on each PNG (pages, keyframes) |
 | Sub-reviewer with clean context | `invoke_subagent` with `TypeName: "self"` (full capability; the reviewer needs image viewing + web search). `research` type is read-only — fine for spot-checks. |
 | Mid-tier vision model | Antigravity routes models per subagent type; if you cannot pin a model, note the actual model used in the run report so graders know. |
