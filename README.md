@@ -1,65 +1,112 @@
-# vigilancia-tech-review
+<div align="center">
 
-Claude Code skill that reviews, scores, and ranks MBA **"Vigilancia Tecnológica: IA de
-vanguardia"** student presentations straight from a link-shared Google Drive folder —
-no Google credentials required.
+# 🏛️ vigilancia-tech-review
 
-For each deck it:
+**Universidad de los Andes · MBA · Reto Integrador 1 – Tecnología de Información**
 
-1. Downloads it anonymously from the shared folder (PPTX, PDF, or Google Slides).
-2. Converts it to PDF and dispatches a **Sonnet sub-agent** that reads **every slide
-   visually** (screenshots and charts included — the PoV evidence is usually images).
-3. Extracts the ficha técnica and **web-verifies the tool's real launch date** against
-   official announcements — decks' claims are never trusted blindly.
-4. Applies the exclusion filter: tools launched **more than 4 months** before the run
-   date → automatic 1.0 (gray zone / low-confidence dates are flagged for humans, never
-   auto-disqualified).
-5. Scores **Prueba de concepto (50%) · Análisis de impacto (25%) · Comunicación (25%)**
-   on the 1.0–5.0 scale, with slide-cited justifications.
-6. Builds a ranked, color-coded Excel (Ranking + Detalle + Meta sheets) with the
-   **top-5 candidates starred** for human TA review.
+*AI-assisted review, scoring, and ranking of student "Vigilancia Tecnológica" presentations — built by the course teaching team.*
 
-The skill produces a *shortlist with evidence*, not official grades — the human
-teaching team always makes the final call.
+[![License: Uniandes Academic](https://img.shields.io/badge/license-Uniandes%20Academic-B6862C)](LICENSE.md)
+[![Platforms](https://img.shields.io/badge/harness-Claude%20Code%20%7C%20Codex%20%7C%20Antigravity-4c72b0)](references/)
+[![Python](https://img.shields.io/badge/python-3.10%2B-3776AB)](requirements.txt)
+[![Docs](https://img.shields.io/badge/docs-espa%C3%B1ol%20%2F%20english-red)](README.es.md)
 
-## Install
+**📖 [Documentación completa en español → README.es.md](README.es.md)**
 
-```bash
-git clone https://github.com/dmmdea/vigilancia-tech-review.git
-# Claude Code (personal skills):
-cp -r vigilancia-tech-review ~/.claude/skills/vigilancia-tech-review
-pip install openpyxl pypdf
+</div>
+
+---
+
+An agent skill that reviews **every** student submission for the Uniandes MBA activity
+*Vigilancia Tecnológica: IA de vanguardia* and delivers a ranked, color-coded Excel for
+the human teaching team. It never assigns the official grade — it produces
+evidence-cited candidate scores and a top-5 shortlist. **Official grades always require
+human review.**
+
+## Why it exists
+
+75+ students submit decks (and Word docs, HTML pages, screenshots, videos, spreadsheets…)
+every week. Reviewing each one honestly — reading every slide, verifying the tool's real
+launch date on the web, checking the evidence is the student's own — takes the teaching
+team days. This skill does the exhaustive first pass in under an hour and hands humans a
+defensible shortlist with slide-cited justifications.
+
+## What it does
+
+```mermaid
+flowchart LR
+    A[Inventory<br/>local_list.py / drive_list.py] --> B[Prepare materials<br/>prepare_materials.py<br/>pptx·docx·html·png·mp4·xlsx·zip → reviewable]
+    B --> C[Build review targets<br/>build_bundles.py<br/>+ resubmission carry-forward]
+    C --> D[1 fresh-context AI reviewer<br/>per student<br/>reads every page · web-verifies dates]
+    D --> E[Mechanical fairness gate<br/>validate_review.py<br/>+ honesty spot-checks]
+    E --> F[Assemble + reconcile<br/>assemble_results.py<br/>same-tool date cross-check]
+    F --> G[Ranked Excel<br/>make_excel.py<br/>Ranking · Detalle · Meta]
 ```
 
-You also need one PDF conversion backend: [LibreOffice](https://www.libreoffice.org/)
-(any OS) or Microsoft PowerPoint (Windows).
+- **Every format is reviewed.** A `.docx`, a screenshot, or a video is a submission —
+  format is never a reason to skip or disqualify a student (the skill's hard fairness
+  rule).
+- **Launch dates are web-verified** against official announcements; tools older than 4
+  months → automatic 1.0, with a human-flagged border band (3.5–4.5 months).
+- **Rubric:** Prueba de concepto 50% · Análisis de impacto 25% · Comunicación 25%,
+  scale 1.0–5.0, computed in exactly one place.
+- **Anti-sloppiness machinery:** per-review mechanical validation (strict field formats,
+  controlled flag vocabulary), honesty spot-checks against the actual pages, duplicate-
+  submission handling with evidence carry-forward, and cross-student same-tool date
+  reconciliation.
+- **Everything teacher-facing ships in Spanish** — the class runs in Spanish.
 
-## Use
+## Harness-agnostic by design
 
-In Claude Code:
+The skill speaks capability language (see `SKILL.md`); per-platform adapters map it onto
+concrete tools:
 
-> Revisa las presentaciones de vigilancia tecnológica en
-> https://drive.google.com/drive/folders/XXXXXXXXXXXX y dame el ranking
+| Your agent harness | Adapter |
+|---|---|
+| **Claude Code** (Claude) | [`references/claude-code.md`](references/claude-code.md) |
+| **Codex CLI** (GPT) | [`references/codex.md`](references/codex.md) |
+| **Antigravity** (Gemini) | [`references/antigravity.md`](references/antigravity.md) |
+| Anything else with vision + web search | follow the capability list in [`SKILL.md`](SKILL.md) |
 
-Requirements on the folder: shared as **"anyone with the link"**. The results Excel is
-written locally (and copied into a local Google Drive Desktop mount of the folder when
-one is detected, so it syncs up automatically); otherwise upload it to the folder
-manually — anonymous uploads to Drive are impossible, which is the price of the
-zero-credentials design.
+Harnesses without native PDF-page vision use the bundled rasterizer
+(`scripts/pdf_to_images.py`, PyMuPDF).
 
-## Repo layout
+## Repository map
 
-```
-SKILL.md                    orchestration instructions Claude follows
-scripts/drive_list.py       anonymous listing of a public Drive folder
-scripts/drive_download.py   anonymous download (binary or Google Slides export)
-scripts/convert_to_pdf.py   PPTX→PDF via LibreOffice or PowerPoint COM + page count
-scripts/make_excel.py       results JSON → two-sheet ranked Excel
-templates/reviewer-prompt.md  the per-deck Sonnet reviewer prompt (Spanish)
-docs/specs/                 design spec
-```
+| Path | What it is |
+|---|---|
+| `SKILL.md` | The skill itself — procedure, fairness rules, capability requirements |
+| `scripts/local_list.py` | Inventory a local / Canvas / Drive-Desktop folder (long-path safe) |
+| `scripts/drive_list.py` · `drive_download.py` | Anonymous link-shared Drive listing + download |
+| `scripts/prepare_materials.py` | Every submitted format → something a reviewer can see |
+| `scripts/pdf_to_images.py` | PDF → per-page PNGs (non-PDF-vision harnesses) |
+| `scripts/build_bundles.py` | Per-student review targets + resubmission carry-forward |
+| `scripts/validate_review.py` | The mechanical fairness gate (single source of truth) |
+| `scripts/assemble_results.py` | Two-pass merge + same-tool reconciliation |
+| `scripts/convert_to_pdf.py` · `make_excel.py` | Slides→PDF · final ranked Excel |
+| `templates/` | Reviewer prompts (Spanish): single-deck + multi-format bundle |
+| `references/` | Platform adapters |
+| `docs/specs/` | Design/run plans |
 
-## Privacy
+## Requirements
 
-Student decks and results never enter this repo and are never uploaded anywhere by the
-skill; all work happens in a local scratch directory.
+Python 3.10+ · `pip install -r requirements.txt` · a slides→PDF backend (LibreOffice or
+MS Office COM) · headless Chrome/Edge for HTML · `ffmpeg` for videos. Windows users:
+read the MAX_PATH section in `SKILL.md` before anything else.
+
+## License
+
+**[Uniandes Academic License](LICENSE.md)** — source-available, not open source:
+
+- Anyone may **view, download, run, and test** the skill for **academic,
+  non-commercial** purposes.
+- **Modification and derivative works are reserved to Universidad de los Andes
+  teachers, TAs, and staff.**
+- No commercial use; no grading real students outside Uniandes without written
+  authorization. Student data never enters this repository.
+
+---
+
+<div align="center">
+<sub>Built with care for the Uniandes MBA teaching team · Bogotá, Colombia 🇨🇴</sub>
+</div>

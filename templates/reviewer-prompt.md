@@ -1,6 +1,10 @@
-# Prompt para el sub-agente revisor (uno por presentación)
+# Prompt para el sub-revisor — presentación simple (uno por estudiante)
 
-Rellena los `{{placeholders}}` y despacha con el Agent tool, `model: sonnet`.
+Rellena los `{{placeholders}}` y despacha UN revisor de contexto limpio por
+estudiante, con un modelo de nivel medio CON VISIÓN y acceso a búsqueda web.
+Cómo despachar en tu harness → `references/<tu-plataforma>.md` del skill.
+Valida SIEMPRE el JSON devuelto con `scripts/validate_review.py` (gate de
+equidad); un fallo se reintenta UNA vez citando los problemas exactos.
 
 ---
 
@@ -23,11 +27,12 @@ empresarial.
 
 ## Instrucciones — sigue este orden
 
-### 1. Lee TODAS las páginas del PDF con el tool Read
-Lee el PDF página por página (usa el parámetro `pages`, máximo 20 por llamada; si tiene
-más de 20 páginas haz varias llamadas). Lee TODO: texto, capturas de pantalla, gráficos,
-tablas, diseño. No te saltes ninguna página — reportarás `pages_read` y se verificará
-contra el total real.
+### 1. Lee TODAS las páginas del archivo con tu herramienta de lectura
+Lee el PDF página por página, VISUALMENTE: texto, capturas de pantalla, gráficos,
+tablas, diseño. (Si en lugar de un PDF te dieron una carpeta de imágenes PNG
+`p001.png, p002.png, ...`, cada imagen ES una página — ábrelas y míralas TODAS.)
+No te saltes ninguna página — reportarás `pages_read` y se verificará contra el
+total real.
 
 ### 2. Extrae la ficha técnica
 - Nombre de la herramienta / función de IA.
@@ -36,19 +41,22 @@ contra el total real.
 - Nombre del estudiante si aparece (portada, pie de página); si no, deja "".
 
 ### 3. Verifica la fecha real de lanzamiento por web
-Usa WebSearch para encontrar la fecha real de lanzamiento PÚBLICO de la herramienta o
-función (anuncio oficial, blog del fabricante, changelog, prensa confiable). Reglas:
+Usa tu herramienta de búsqueda web para encontrar la fecha real de lanzamiento
+PÚBLICO de la herramienta o función (anuncio oficial, blog del fabricante, changelog,
+prensa confiable). Reglas:
 - Cita la URL de la mejor fuente.
 - `verification_confidence`: "alta" (anuncio oficial con fecha), "media" (prensa/fuentes
   secundarias consistentes), "baja" (no concluyente o fuentes contradictorias).
 - Si la herramienta tiene versiones/funciones, la fecha que cuenta es la del
-  lanzamiento de LO QUE EL ESTUDIANTE USÓ (p. ej. "GPT-5.3-turbo" cuenta desde el
-  lanzamiento de esa versión, no del producto original).
+  lanzamiento de LO QUE EL ESTUDIANTE USÓ (p. ej. una versión "turbo" cuenta desde el
+  lanzamiento de ESA versión, no del producto original).
 - Calcula `age_months` = meses (con un decimal) entre la fecha verificada y {{run_date}}.
-  Si la confianza es "baja", deja `age_months` en `null` (nunca presentes un número
-  no verificado como dato) y pon en `evidence_notes` el estimado calculado con la
-  fecha DECLARADA, diciendo explícitamente que es "estimado con la fecha DECLARADA,
-  no verificada".
+  Con confianza "alta" o "media", `age_months` DEBE ser un número (se valida
+  mecánicamente). Si la confianza es "baja", deja `age_months` en `null` (nunca
+  presentes un número no verificado como dato) y pon en `evidence_notes` el estimado
+  calculado con la fecha DECLARADA, diciendo explícitamente que es "estimado con la
+  fecha DECLARADA, no verificada". Si no encuentras NINGUNA fecha, deja el campo de
+  fecha como "" (cadena vacía) — nunca escribas "desconocida" ni frases.
 
 ### 4. Aplica el filtro de exclusión
 `disqualified = true` SOLO si con confianza alta/media:
@@ -63,6 +71,10 @@ Si la verificación es de confianza "baja", NO descalifiques nunca: agrega
 "VERIFICAR FECHA" y explica en `evidence_notes`.
 Si hay discrepancia relevante entre fecha declarada y verificada (>1 mes), agrega el
 flag "DISCREPANCIA FECHA".
+El formato del archivo NUNCA es motivo de descalificación.
+Si marcas `disqualified = true`, escribe SIEMPRE en `dq_reason` una frase con el
+motivo (la edad verificada, o por qué es herramienta general sin función
+específica reciente) — una descalificación sin razón falla la validación.
 
 ### 5. Califica (escala 1.0–5.0, decimales permitidos)
 Aunque esté descalificada, califica igual los tres criterios (los TAs necesitan el dato).
@@ -75,19 +87,30 @@ Aunque esté descalificada, califica igual los tres criterios (los TAs necesitan
   impacto en productividad personal Y empresarial? ¿Considera límites, costos, riesgos?
 - **comunicacion** — Comunicación (peso 25%): ¿ficha técnica completa (nombre, fecha,
   objetivo)? ¿Narrativa clara y presentable en 3 minutos? ¿Slides legibles y bien
-  organizadas? (Evalúas el deck, no la presentación oral.)
+  organizadas? (Evalúas el material, no la presentación oral.)
 
 En cada justificación cita slides concretas ("slide 4: captura del dashboard con ...").
+Si el archivo tiene UNA sola página, cita elementos concretos de la lámina en su lugar.
 NO regales nota: 3.0 es un trabajo correcto; 4.5+ exige evidencia sobresaliente.
 
-### 6. Devuelve SOLO este JSON (sin texto adicional)
+### 6. Formato de los campos — ESTRICTO (se valida mecánicamente)
+- `declared_launch_date` y `verified_launch_date`: SOLO "YYYY-MM-DD", "YYYY-MM"
+  o "". Nunca prosa, nunca dos fechas. Contexto adicional → `observations`.
+- `student`: solo el nombre, opcionalmente "(código NNNN)". Sin comentarios.
+- `tool`: máximo 70 caracteres. El detalle largo → `observations`.
+- `flags`: SOLO de esta lista cerrada — VERIFICAR FECHA · DISCREPANCIA FECHA ·
+  REVISAR MANUALMENTE · SIN EVIDENCIA PROPIA · IMPACTO NO CUANTIFICADO ·
+  HERRAMIENTA GENERAL - FUNCION ESPECIFICA · EVIDENCIA NO LEGIBLE.
+  Cualquier otra observación libre va en `observations`, no como flag.
+
+### 7. Devuelve SOLO este JSON (sin texto adicional)
 ```json
 {
   "file": "{{original_filename}}",
   "student": "",
   "tool": "",
-  "declared_launch_date": "YYYY-MM-DD o YYYY-MM o \"\"",
-  "verified_launch_date": "YYYY-MM-DD o YYYY-MM o \"\"",
+  "declared_launch_date": "",
+  "verified_launch_date": "",
   "verification_source": "URL",
   "verification_confidence": "alta|media|baja",
   "age_months": null,
@@ -95,6 +118,7 @@ NO regales nota: 3.0 es un trabajo correcto; 4.5+ exige evidencia sobresaliente.
   "dq_reason": "",
   "scores": {"poc": null, "impacto": null, "comunicacion": null},
   "flags": [],
+  "observations": "",
   "pages_total": {{pages_total}},
   "pages_read": null,
   "justification": {"poc": "", "impacto": "", "comunicacion": ""},

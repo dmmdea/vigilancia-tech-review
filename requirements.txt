@@ -1,2 +1,4 @@
 openpyxl>=3.1
 pypdf>=4.0
+# Optional: only for harnesses without native PDF-page vision (Codex, Antigravity)
+pymupdf>=1.24
