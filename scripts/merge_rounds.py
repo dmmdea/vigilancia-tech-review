@@ -82,15 +82,34 @@ def load_registry(wb):
     if REGISTRY not in wb.sheetnames:
         out = []
         for title in wb.sheetnames:
-            if title.startswith("Ranking - "):
-                rnd = title[len("Ranking - "):]
-                titles = {k: f"{k} - {rnd}" for k in KINDS
-                          if f"{k} - {rnd}" in wb.sheetnames}
-                out.append((rnd, titles))
+            if not title.startswith("Ranking - "):
+                continue
+            # only a REAL round sheet backfills — a TA's hand-added
+            # "Ranking - consolidado" must not become a phantom round
+            # (round-2 finding 2)
+            hdr = [c.value for c in wb[title][1]]
+            if not {"Estudiante", "Nota final", "Estado"} <= set(hdr):
+                print(f"AVISO: la hoja '{title}' parece de ronda pero no "
+                      "tiene las columnas de make_excel — se ignora en la "
+                      "reconstrucción del registro.", file=sys.stderr)
+                continue
+            rnd = title[len("Ranking - "):]
+            # the pre-registry version TRUNCATED titles to 31 chars, and
+            # each kind prefix has a different length — probe by prefix,
+            # not by exact recomposition (round-2 finding 1, Meta orphan)
+            titles = {}
+            for k in KINDS:
+                want = f"{k} - {rnd}"
+                hit = next((t for t in wb.sheetnames if t == want
+                            or t.startswith(want)), None)
+                if hit:
+                    titles[k] = hit
+            out.append((rnd, titles))
         if out:
             print(f"AVISO: maestro sin hoja de registro '{REGISTRY}' — "
                   f"{len(out)} ronda(s) reconstruida(s) desde los títulos "
-                  "de hoja existentes.", file=sys.stderr)
+                  "de hoja existentes (posiblemente truncados a 31 chars "
+                  "por la versión anterior).", file=sys.stderr)
         return out
     out = []
     for row in wb[REGISTRY].iter_rows(min_row=2, values_only=True):
@@ -144,7 +163,7 @@ def rebuild_historico(wb, registry):
             # divergence, not "no data" — its Histórico column will be
             # blank; say so instead of silently succeeding (finding 4)
             print(f"AVISO: la ronda registrada '{name}' no tiene su hoja "
-                  f"'{t}' en el maestro (¿renombrada o borrada a mano?) — "
+                  f"'{t or '(sin título de Ranking registrado)'}' en el maestro (¿renombrada o borrada a mano?) — "
                   "su columna del Histórico quedará vacía.", file=sys.stderr)
             continue
         ws = wb[t]
@@ -154,6 +173,9 @@ def rebuild_historico(wb, registry):
             i_fin = hdr.index("Nota final")
             i_st = hdr.index("Estado")
         except ValueError:
+            print(f"AVISO: la hoja '{t}' de la ronda '{name}' no tiene las "
+                  "columnas esperadas (Estudiante/Nota final/Estado) — su "
+                  "columna del Histórico quedará vacía.", file=sys.stderr)
             continue
         i_key = hdr.index("Clave") if "Clave" in hdr else None
         (keyed if i_key is not None else name_keyed).append(name)
@@ -164,6 +186,18 @@ def rebuild_historico(wb, registry):
             key = ((row[i_key] or "").strip() if i_key is not None else "") or est
             if not key:
                 continue
+            if key in data and name in data[key]["grades"]:
+                # two REVISADO rows in the SAME round collapsing onto one
+                # key (blank Clave + shared display name) would silently
+                # drop a grade — disambiguate instead (round-2 finding 5)
+                print(f"AVISO: dos filas REVISADO de la ronda '{name}' "
+                      f"comparten la clave '{key}' — se separan en filas "
+                      "distintas del Histórico; verificar la identidad de "
+                      "esos estudiantes.", file=sys.stderr)
+                base, n = key, 2
+                while key in data and name in data[key]["grades"]:
+                    key = f"{base} ({n})"
+                    n += 1
             if key not in data:
                 data[key] = {"name": est, "grades": {}}
                 order.append(key)
@@ -213,11 +247,12 @@ def main():
               "permitidos en títulos de hoja de Excel (\\ / ? * [ ] :) — "
               "usa otro nombre.", file=sys.stderr)
         sys.exit(1)
-    if rnd.startswith("'") or rnd.endswith("'"):
-        # Excel also forbids sheet titles that begin/end with an apostrophe
-        print(f"ERROR: el nombre de ronda '{rnd}' no puede empezar ni "
-              "terminar con apóstrofo (regla de Excel para títulos de "
-              "hoja).", file=sys.stderr)
+    if rnd.endswith("'"):
+        # Excel forbids sheet titles ENDING with an apostrophe (the title
+        # always starts with the kind prefix, so a leading one is fine)
+        print(f"ERROR: el nombre de ronda '{rnd}' no puede terminar con "
+              "apóstrofo (regla de Excel para títulos de hoja).",
+              file=sys.stderr)
         sys.exit(1)
     master_path, round_path = args
 
@@ -250,6 +285,44 @@ def main():
         wb.remove(wb.active)
 
     registry = load_registry(wb)
+
+    # Resolve round IDENTITY against reconstructed (pre-registry) names,
+    # which are 31-char TRUNCATED remnants of the real round name
+    # (round-2 findings 1 and 3):
+    #  * hash-form titles round-trip exactly (the hash pins the full name)
+    #    → same round: ADOPT rnd as the entry's name so refresh works;
+    #  * a truncated-remnant prefix match is AMBIGUOUS (same round being
+    #    refreshed, or a genuinely different round sharing the prefix) —
+    #    proceeding would either duplicate the week or clobber another:
+    #    refuse with both exits spelled out.
+    if not any(name == rnd for name, _t in registry):
+        resolved = []
+        for name, btitles in registry:
+            rk = btitles.get("Ranking", "")
+            if name != rnd and rk and \
+                    rk == sheet_title("Ranking", rnd):
+                # EXACT title match only: the reconstructed hash-form name
+                # round-trips byte-identical. Casefolding here would make a
+                # case-variant round name silently adopt-and-refresh instead
+                # of refusing (the F3 guarantee).
+                name = rnd
+                print(f"AVISO: la ronda reconstruida '{rk[10:]}' es la "
+                      f"misma que '{rnd}' (título idéntico) — se refresca.",
+                      file=sys.stderr)
+            elif (name != rnd and len(rk) == 31 and "~" not in rk
+                    and rnd.startswith(name)):
+                print(f"ERROR: el maestro contiene una ronda reconstruida "
+                      f"'{name}' (título truncado por la versión anterior) "
+                      f"que coincide con el inicio de '{rnd}'. No es posible "
+                      "saber mecánicamente si es la misma ronda. Si ES la "
+                      f"misma, re-mergéala con --round=\"{name}\"; si es una "
+                      "ronda DISTINTA, usa un nombre que no empiece igual, o "
+                      "regenera el maestro desde cero con los Excel por "
+                      "ronda. NO se modificó nada.", file=sys.stderr)
+                sys.exit(2)
+            resolved.append((name, btitles))
+        registry = resolved
+
     titles = {k: sheet_title(k, rnd) for k in KINDS}
 
     # refuse to touch a title that the registry attributes to ANOTHER round —
@@ -296,13 +369,25 @@ def main():
     # previous master intact
     tmp = tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False)
     tmp.close()
+    staged = longpath(master_path + ".tmp~")
     try:
         wb.save(tmp.name)
-        staged = longpath(master_path + ".tmp~")
         shutil.copyfile(tmp.name, staged)
         os.replace(staged, longpath(master_path))
+    except OSError as exc:
+        # the staged copy holds student grades in the Drive-synced delivery
+        # folder — never leave it behind; and a write failure is exit 2,
+        # not the exit-1 "bad arguments" contract (round-2 finding 4)
+        print(f"ERROR: no se pudo escribir el maestro: {exc}\n"
+              "¿Está el archivo abierto en Excel? Ciérralo y reintenta. "
+              "El maestro anterior quedó intacto.", file=sys.stderr)
+        sys.exit(2)
     finally:
-        os.unlink(tmp.name)
+        for leftover in (tmp.name, staged):
+            try:
+                os.unlink(leftover)
+            except OSError:
+                pass
     print(f"OK maestro '{os.path.basename(master_path)}': ronda '{rnd}' "
           f"{'reemplazada' if replaced else 'agregada'} · rondas presentes: "
           f"{rounds} · estudiantes en Histórico: {n_students}")

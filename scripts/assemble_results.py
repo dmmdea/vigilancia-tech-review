@@ -434,9 +434,9 @@ def main():
             if "REVISAR MANUALMENTE" not in row["flags"]:
                 row["flags"].append("REVISAR MANUALMENTE")
             row["status_reason"] += (
-                " | AVISO: la versión más reciente de ESTE documento NO "
-                "quedó calificada en esta corrida — revisar ESTA versión "
-                "manualmente.")
+                " | AVISO: la versión más reciente de ESTE documento no "
+                "recibió nota propia en esta corrida — revisar ESTA "
+                "versión manualmente.")
 
     for e in plan["folders"]:
         target = e.get("superseded_by_id")
@@ -497,7 +497,7 @@ def main():
             if rank[v] <= rank[prev["verdict"]]:
                 continue
         checks_by_id[rid] = c
-    n_older = 0
+    older_ids = set()
     applied_ids = set()   # count CHECKS applied, not rows — two rows sharing
     for row in results:   # an id must not double-count (convergence minor)
         c = checks_by_id.get(row.get("id"))
@@ -506,7 +506,7 @@ def main():
         applied_ids.add(row["id"])
         v = c.get("verdict")
         if v == "mas_vieja":
-            n_older += 1
+            older_ids.add(row["id"])
             for fl in ("VERIFICAR FECHA", "DISCREPANCIA FECHA",
                        "REVISAR MANUALMENTE"):
                 if fl not in row["flags"]:
@@ -528,7 +528,7 @@ def main():
                         + (c.get("notes") or "")).strip(" |")
     if date_checks:
         print(f"date_checks: {len(date_checks)} recibidos, {len(applied_ids)} "
-              f"aplicados ({n_older} con evidencia de fecha más vieja)")
+              f"aplicados ({len(older_ids)} con evidencia de fecha más vieja)")
 
     # ---- same-tool cross-student reconciliation ---------------------------
     groups = {}
