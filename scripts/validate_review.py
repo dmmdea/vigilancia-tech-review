@@ -14,6 +14,8 @@ Usage:
         [--expect-materials=lbl1|lbl2]  # bundle review: labels that must all
                                         # appear in materials_reviewed ('|'-sep)
         [--normalized-out=<path>]       # write the cleaned/normalized review
+        [--require-extended]            # enforce indicio_ia (1-5) +
+                                        # feedback_sugerido (fresh reviews)
 
 Checks (each one occurred in real output in the 2026-08-14 pilot run):
   * scores in [1.0, 5.0]; justifications non-empty.
@@ -114,12 +116,18 @@ FLAG_ALIASES = {
 }
 
 
-def normalize_review(r, expect_pages=None, expect_materials=None):
+def normalize_review(r, expect_pages=None, expect_materials=None,
+                     require_extended=False):
     """Validate + normalize IN PLACE. Returns (problems, moved) lists.
 
     problems -> the review must be retried/rejected (hard failures; nothing
     is auto-fixed for these). moved -> fields whose out-of-format content was
     relocated to `observations` (soft fixes; content preserved).
+
+    require_extended: enforce the class-1 feedback fields (`indicio_ia`
+    integer 1-5 and non-empty `feedback_sugerido`) as HARD requirements —
+    orchestrators pass this on fresh per-review calls; assembly re-validation
+    leaves it off so pre-extension review sets keep working.
     """
     problems = []
     moved = []
@@ -229,6 +237,24 @@ def normalize_review(r, expect_pages=None, expect_materials=None):
         m = re.match(r"^([^()]+)", st)
         r["student"] = (m.group(1).strip() if m else "")[:60]
 
+    # --- extended fields (class-1 feedback, R17/R18) ------------------------
+    ia = r.get("indicio_ia")
+    if isinstance(ia, bool) or (ia is not None
+                                and not isinstance(ia, int)):
+        # floats/strings drift here; a non-integer signal is unusable for
+        # TA filtering — relocate and clear rather than guessing
+        obs.append(f"indicio_ia original del revisor: {ia!r}")
+        moved.append("indicio_ia")
+        r["indicio_ia"] = None
+        ia = None
+    if isinstance(ia, int) and not 1 <= ia <= 5:
+        problems.append(f"indicio_ia fuera de rango 1-5: {ia}")
+    if require_extended:
+        if not isinstance(ia, int):
+            problems.append("indicio_ia ausente o no entero (requerido: 1-5)")
+        if not (r.get("feedback_sugerido") or "").strip():
+            problems.append("feedback_sugerido vacío (requerido: 2-4 frases)")
+
     # --- tool length --------------------------------------------------------
     tool = (r.get("tool") or "").strip()
     if len(tool) > 70:
@@ -280,6 +306,7 @@ def main():
     expect_pages = None
     expect_materials = None
     out_path = None
+    require_extended = "--require-extended" in sys.argv[1:]
     for a in sys.argv[1:]:
         if a.startswith("--expect-pages="):
             expect_pages = int(a.split("=", 1)[1])
@@ -296,7 +323,8 @@ def main():
                           "moved_to_observations": []}, ensure_ascii=False))
         sys.exit(2)
 
-    problems, moved = normalize_review(r, expect_pages, expect_materials)
+    problems, moved = normalize_review(r, expect_pages, expect_materials,
+                                       require_extended=require_extended)
     if out_path:
         with open(out_path, "w", encoding="utf-8") as f:
             json.dump(r, f, ensure_ascii=False, indent=2)

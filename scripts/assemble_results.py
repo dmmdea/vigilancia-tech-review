@@ -122,12 +122,18 @@ def main():
 
     results = []
 
-    def no_rev(fr, reason, flags=None, student=""):
+    def no_rev(fr, reason, flags=None, student="", status="no_revisado"):
         # every row carries the student's name — a NO REVISADO row whose
-        # Estudiante column is blank makes the Excel unusable for TA triage
+        # Estudiante column is blank makes the Excel unusable for TA triage.
+        # status may also be:
+        #   "revisado_anexo" — the file WAS read inside the student's
+        #       integral review (Excel: REVISADO (ANEXO)); R16 class feedback:
+        #       these previously showed as NO REVISADO and read as skipped.
+        #   "reemplazada"    — an older version/duplicate superseded by a
+        #       newer submission (Excel: REEMPLAZADA).
         results.append({"id": fr["id"], "file": fr["name"],
                         "student": student,
-                        "status": "no_revisado", "status_reason": reason,
+                        "status": status, "status_reason": reason,
                         "disqualified": False, "flags": list(flags or [])})
 
     def graded(fr, r, extra_flags=None, extra_notes=None, student_name=None):
@@ -203,13 +209,22 @@ def main():
                     no_rev(fr, "evidencia de este envío anterior SÍ revisada "
                                "dentro de la revisión integral de la entrega "
                                "final del estudiante — la nota está en esa fila.",
-                           ["ENTREGA DUPLICADA",
-                            "EVIDENCIA DE ENVIO ANTERIOR INCLUIDA"],
-                           student=e["student_name"])
+                           ["EVIDENCIA DE ENVIO ANTERIOR INCLUIDA"],
+                           student=e["student_name"], status="revisado_anexo")
                 else:
-                    no_rev(fr, e["no_deck_reason"], ["ENTREGA DUPLICADA"],
-                           student=e["student_name"])
+                    no_rev(fr, e["no_deck_reason"], [],
+                           student=e["student_name"], status="reemplazada")
             continue
+
+        # R15: older versions superseded WITHIN the folder — visible rows,
+        # graded row pointed at, never dropped (they are in the listings, so
+        # the make_excel completeness gate requires them anyway)
+        for fr in e.get("superseded_files", []):
+            no_rev(fr, "versión anterior de "
+                       f"'{fr.get('superseded_by_file', 'la entrega final')}' "
+                       "en la misma carpeta — se calificó la versión más "
+                       "reciente; la nota está en esa fila.",
+                   student=e["student_name"], status="reemplazada")
 
         bundle = bundle_by_fid.get(fid)
         deck = deck_by_fid.get(fid)
@@ -276,15 +291,21 @@ def main():
             # actually LISTED — anything else is a false certification that
             # suppresses the human follow-up (finding 4, 2026-08-15 review).
             listed = set(bdef.get("material_labels") or [])
+            # a .zip container whose EXTRACTED children were listed (labels
+            # "container :: inner") counts as read — the contents are the
+            # submission, the container is just packaging
+            container_prefixes = {lbl.split(" :: ")[0] for lbl in listed
+                                  if " :: " in lbl}
+            listed |= container_prefixes
             review_ok = not bundle.get("problems")
             for fr in files:
                 if fr is primary:
                     continue
                 if fr["name"] in listed and review_ok:
-                    no_rev(fr, "material adjunto del estudiante; SÍ fue leído "
-                               "dentro de la revisión integral de "
-                               f"'{primary['name']}' — la nota está en esa fila.",
-                           student=e["student_name"])
+                    no_rev(fr, "leído como anexo dentro de la revisión "
+                               f"integral de '{primary['name']}' — la nota "
+                               "del estudiante está en esa fila.",
+                           student=e["student_name"], status="revisado_anexo")
                 elif fr["name"] in listed:
                     no_rev(fr, "material listado en una revisión integral que "
                                "quedó incompleta — revisar manualmente junto "
@@ -307,10 +328,10 @@ def main():
                 graded(e["deck"], deck["result"], flags, note,
                        e["student_name"])
             for fr in e.get("deck_source_of", []):
-                no_rev(fr, "archivo fuente de la MISMA presentación ya "
-                           f"revisada ('{e['deck']['name']}', mismo nombre "
-                           "base) — la nota está en esa fila.",
-                       student=e["student_name"])
+                no_rev(fr, "archivo fuente (mismo contenido) de la "
+                           f"presentación ya revisada '{e['deck']['name']}' — "
+                           "la nota está en esa fila.",
+                       student=e["student_name"], status="revisado_anexo")
             for fr in e.get("evidence", []):
                 no_rev(fr, "material adjunto no incluido en la revisión — "
                            "revisar manualmente.", ["REVISAR MANUALMENTE"],

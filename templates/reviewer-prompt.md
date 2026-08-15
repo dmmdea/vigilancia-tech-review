@@ -93,6 +93,27 @@ En cada justificación cita slides concretas ("slide 4: captura del dashboard co
 Si el archivo tiene UNA sola página, cita elementos concretos de la lámina en su lugar.
 NO regales nota: 3.0 es un trabajo correcto; 4.5+ exige evidencia sobresaliente.
 
+### 5bis. Indicio de IA sin filtro — SOLO sobre el material entregado
+El curso permite usar IA; lo que se señala es entregarla SIN el trabajo manual
+de revisar, filtrar y mejorar. Evalúa `indicio_ia` (entero 1-5) sobre el
+material entregado, con evidencia citada en `indicio_ia_evidencia`:
+- 1 = claramente curado a mano (voz propia, datos propios integrados, diseño
+  intencional, sin artefactos)
+- 3 = mezcla: base de IA con edición parcial visible
+- 5 = volcado directo de IA sin filtro: frases de chatbot sin editar ("Claro,
+  aquí tienes...", transiciones genéricas), estructura de plantilla stock,
+  artefactos de generación (placeholders, markdown sin renderizar, texto
+  cortado), uniformidad sin voz propia, inconsistencias entre secciones.
+Esta señal es ADVISORY para el equipo docente: NO afecta poc/impacto/
+comunicacion ni descalifica. Sé específico en la evidencia (qué slide/página,
+qué frase o artefacto).
+
+### 5ter. Feedback sugerido
+Escribe en `feedback_sugerido` 2-4 frases EN ESPAÑOL dirigidas al estudiante:
+qué hizo bien (concreto) y qué mejorar la próxima vez (accionable). Es un
+borrador interno del equipo docente — tono constructivo y directo, sin notas
+numéricas dentro del texto.
+
 ### 6. Formato de los campos — ESTRICTO (se valida mecánicamente)
 - `declared_launch_date` y `verified_launch_date`: SOLO "YYYY-MM-DD", "YYYY-MM"
   o "". Nunca prosa, nunca dos fechas. Contexto adicional → `observations`.
@@ -102,6 +123,7 @@ NO regales nota: 3.0 es un trabajo correcto; 4.5+ exige evidencia sobresaliente.
   REVISAR MANUALMENTE · SIN EVIDENCIA PROPIA · IMPACTO NO CUANTIFICADO ·
   HERRAMIENTA GENERAL - FUNCION ESPECIFICA · EVIDENCIA NO LEGIBLE.
   Cualquier otra observación libre va en `observations`, no como flag.
+- `indicio_ia`: entero 1-5 (nunca decimal, nunca texto); `feedback_sugerido`: obligatorio, 2-4 frases.
 
 ### 7. Devuelve SOLO este JSON (sin texto adicional)
 ```json
@@ -119,6 +141,9 @@ NO regales nota: 3.0 es un trabajo correcto; 4.5+ exige evidencia sobresaliente.
   "scores": {"poc": null, "impacto": null, "comunicacion": null},
   "flags": [],
   "observations": "",
+  "indicio_ia": null,
+  "indicio_ia_evidencia": "",
+  "feedback_sugerido": "",
   "pages_total": {{pages_total}},
   "pages_read": null,
   "justification": {"poc": "", "impacto": "", "comunicacion": ""},

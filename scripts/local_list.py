@@ -91,6 +91,41 @@ def getsize(p):
         return None, str(e)
 
 
+VERSION_MARK = re.compile(
+    r"(?:^|[\s_\-.(])(v(?:ersi[oó]n)?\s*(\d+)|final(?:isim[ao])?|definitiv[ao]"
+    r"|[uú]ltim[ao]|nuev[ao]|corregid[ao]|\((\d+)\))(?:[\s_\-.)]|$)",
+    re.IGNORECASE)
+
+
+def norm_person(name: str) -> str:
+    """Accent/case/space-insensitive person key — for FLAGGING possible
+    duplicates only, never for auto-superseding: two distinct students can
+    legitimately share a name, and silently discarding one student's work on
+    a name match would be the worst possible bug in a grading tool."""
+    import unicodedata
+    n = unicodedata.normalize("NFKD", name or "")
+    n = "".join(c for c in n if not unicodedata.combining(c))
+    return " ".join(n.lower().split())
+
+
+def version_rank(fname: str):
+    """Sortable version signal from a filename, or None when the name carries
+    no version marker. 'final/definitiva/última'-type words BEAT numbered
+    versions (they mean the last one by definition: v1 < v2 < FINAL);
+    among numbered, higher wins."""
+    best = None
+    for m in VERSION_MARK.finditer(fname):
+        num = m.group(2) or m.group(3)
+        r = (1, int(num)) if num else (2, 0)   # keyword-final outranks vN
+        if best is None or r > best:
+            best = r
+    return best
+
+
+def strip_versions(stem: str) -> str:
+    return " ".join(VERSION_MARK.sub(" ", stem).lower().split())
+
+
 def parse_ts(ts: str):
     """Returns a sortable tuple, or None when the timestamp cannot be parsed.
     Callers must treat None as 'cannot decide order' and SAY SO — a silent
@@ -288,6 +323,49 @@ def main():
             continue
 
         reviewable = [fr for fr in files if fr["ext"] in REVIEWABLE_EXT]
+
+        # R15: WITHIN-folder versioned duplicates (v1/v2/FINAL/(2)...) of the
+        # SAME document — grade the most recent version, mark the earlier
+        # ones REEMPLAZADA (never "evidence", never silently dropped).
+        superseded_files = []
+        by_base = {}
+        for fr in reviewable:
+            stem = os.path.splitext(fr["name"])[0].strip()
+            by_base.setdefault(strip_versions(stem), []).append(fr)
+        surviving = []
+        for base, group in by_base.items():
+            # group by FULL stem: an export pair (Deck.pdf + Deck.pptx) shares
+            # one stem and is NEVER a version relation — it survives together.
+            stems = {}
+            for fr in group:
+                stems.setdefault(os.path.splitext(fr["name"])[0].strip(),
+                                 []).append(fr)
+            marked = any(version_rank(st) is not None for st in stems)
+            if len(stems) >= 2 and marked:
+                def skey(item):
+                    st, frs = item
+                    vr = version_rank(st)
+                    return (vr or (-1, -1),
+                            max(fr.get("size") or 0 for fr in frs))
+                ordered_stems = sorted(stems.items(), key=skey)
+                win_stem, win_files = ordered_stems[-1]
+                surviving.extend(win_files)
+                n_old = 0
+                for st, frs in ordered_stems[:-1]:
+                    for fr in frs:
+                        fr = dict(fr)
+                        fr["superseded_by_file"] = win_files[0]["name"]
+                        superseded_files.append(fr)
+                        n_old += 1
+                e["notes"].append(
+                    "VERSIONES EN LA MISMA CARPETA: se calificó "
+                    f"'{win_stem}' (marcador de versión más reciente); "
+                    f"{n_old} archivo(s) de versiones anteriores quedan como "
+                    "REEMPLAZADA — confirmar con un humano.")
+            else:
+                surviving.extend(group)
+        reviewable = surviving
+
         by_stem = {}
         for fr in reviewable:
             by_stem.setdefault(os.path.splitext(fr["name"])[0].strip().lower(),
@@ -325,9 +403,32 @@ def main():
                 f"'{deck['name']}' como entrega principal por heurística de "
                 "nombre — confirmar con un humano.")
         e.update(status="review", deck=deck, deck_source_of=source_of,
-                 evidence=[fr for fr in files if fr["ext"] not in REVIEWABLE_EXT]
+                 superseded_files=superseded_files,
+                 evidence=[fr for fr in files if fr["ext"] not in REVIEWABLE_EXT
+                           and fr["name"] not in
+                           {sf["name"] for sf in superseded_files}]
                           + leftovers)
         plan["folders"].append(e)
+
+    # R15: cross-folder duplicate FLAGGING by normalized student name — only
+    # a flag, NEVER auto-supersede (distinct students can share a name; a
+    # name-based auto-discard would silently destroy one student's work).
+    by_person = {}
+    for e in plan["folders"]:
+        if e.get("canvas_key"):
+            continue          # canvas-keyed folders already grouped reliably
+        by_person.setdefault(norm_person(e["student_name"]), []).append(e)
+    for person, entries in by_person.items():
+        if person and len(entries) > 1:
+            names = [x["folder_name"] for x in entries]
+            for x in entries:
+                x["notes"].append(
+                    "POSIBLE ENTREGA DUPLICADA (mismo nombre de estudiante en "
+                    f"varias carpetas sin clave Canvas: {names}) — verificar "
+                    "manualmente si es la misma persona; NO se descartó "
+                    "ninguna automáticamente.")
+            print(f"NOTE posible duplicado por nombre: {person} -> {names}",
+                  file=sys.stderr)
 
     for fname, obj in (("listing.json", main_listing),
                        ("manifest.json", manifest),

@@ -200,6 +200,11 @@ python "$SKILL_DIR/scripts/validate_review.py" "<review.json>" --expect-pages=N 
 python "$SKILL_DIR/scripts/validate_review.py" "<review.json>" --expect-materials="a|b|c" --normalized-out="<review.json>"
 ```
 
+Pass `--require-extended` on these fresh per-review calls: it enforces the
+class-feedback fields — `indicio_ia` (1-5 advisory AI-slop signal on the
+delivered material; NEVER a grade component) and `feedback_sugerido` (2-4
+Spanish sentences of draft student feedback for the teaching team).
+
 Exit 2 → re-dispatch that student ONCE with the `problems` list appended. Still
 failing → `NO REVISADO`, reason "revisión incompleta", flag for humans. The validator
 also normalizes fields (strict dates, bare student names, ≤70-char tool, controlled
@@ -227,8 +232,11 @@ Expects `deck_reviews.json` / `bundle_reviews.json` in `$WORK` (shape:
 `{"reviewed": [{"folder_id", "result", "problems": [], "spotcheck": null | {"plausible": bool, "notes": str}}]}`
 — a spotcheck object without a `plausible` key is treated as INCONCLUSIVE, never
 as failed).
-Produces `results.json`: one row per submitted FILE — one graded row per student, the
-rest NO REVISADO with reasons pointing at the graded row. It re-applies the validator
+Produces `results.json`: one row per submitted FILE — one graded row per student;
+files READ inside that student's integral review get `revisado_anexo`
+(Excel: **REVISADO (ANEXO)**, green tint), superseded duplicates and older
+in-folder versions get `reemplazada` (Excel: **REEMPLAZADA**, violet tint),
+and only genuinely unreviewed material stays NO REVISADO. It re-applies the validator
 normalization (defense in depth) and runs **same-tool reconciliation**: students whose
 verified dates for the same tool differ by >1 month all get `VERIFICAR FECHA` — the
 reviewers verified independently, so this is where disagreement becomes visible.
@@ -271,7 +279,13 @@ veredicto.
   Low-confidence verification → `age_months` stays null, flag `VERIFICAR FECHA`, never DQ.
 - Border band 3.5–4.5 months always carries flag `VERIFICAR FECHA`.
 - On a resubmission, grade the LATEST; evidence attached only to an earlier attempt
-  rides along flagged (`build_bundles.py` does this automatically).
+  rides along flagged (`build_bundles.py` does this automatically). Within one
+  folder, version-marked files (v1/v2/FINAL/(2)) resolve to the most recent —
+  older versions become REEMPLAZADA rows. Cross-folder duplicates supersede
+  only on a matching Canvas key; same-name-different-folder is FLAGGED for a
+  human, never auto-discarded (two students can share a name).
+- `indicio_ia` is advisory only: it never changes scores and never
+  disqualifies — it signals unfiltered AI dumping for the teaching team.
 - Never edit a reviewer's scores or justifications. Field normalization relocates
   out-of-format content; it never changes verdicts. If a verdict looks off, flag it —
   humans decide.
