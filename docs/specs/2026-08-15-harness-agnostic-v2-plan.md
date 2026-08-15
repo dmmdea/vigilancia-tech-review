@@ -136,3 +136,9 @@ chars que BORRABA rondas; Histórico partido por nombres libres) — TODOS
 corregidos con red/green ejecutado (commit 5cff626). semgrep limpio.
 Regresión del piloto: 95 filas, 0 no_revisado. Ronda de convergencia
 despachada sobre 5cff626; ship al quedar NOTHING NEW.
+
+## Convergencia y cierre (2026-08-15)
+5 rondas adversariales sobre feat/class1-feedback: 6→5→3→1→0 hallazgos
+(cada uno reproducido por ejecución y corregido con red/green). Antigravity
+verificado E2E en vivo (adaptador actualizado). Ronda 5: NOTHING NEW —
+rama lista para merge bajo la autorización permanente R13.
