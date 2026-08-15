@@ -49,6 +49,7 @@ THIN = Border(*[Side(style="thin", color="D1D5DB")] * 4)
 
 RANK_COLS = [
     ("Posición", 9), ("Top 5", 7), ("Archivo", 38), ("Estudiante", 24),
+    ("Clave", 12),
     ("Herramienta", 26), ("Fecha lanz. declarada", 15),
     ("Fecha lanz. verificada", 15), ("Fuente verificación", 40),
     ("Confianza", 10), ("Edad (meses)", 9), ("¿Descalificado?", 13),
@@ -259,7 +260,8 @@ def main() -> None:
         row = [
             position,
             "⭐ TOP 5" if in_top5 else "",
-            r.get("file", ""), r.get("student", ""), r.get("tool", ""),
+            r.get("file", ""), r.get("student", ""),
+            r.get("canvas_key", ""), r.get("tool", ""),
             r.get("declared_launch_date", ""), r.get("verified_launch_date", ""),
             r.get("verification_source", ""), r.get("verification_confidence", ""),
             r.get("age_months", ""),
@@ -282,7 +284,7 @@ def main() -> None:
             c.border = THIN
             if fill:
                 c.fill = fill
-            if j in (13, 14, 15, 16):
+            if j in (14, 15, 16, 17):
                 c.number_format = "0.00"
 
     ws2 = wb.create_sheet("Detalle")

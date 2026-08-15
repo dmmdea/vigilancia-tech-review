@@ -91,9 +91,17 @@ def getsize(p):
         return None, str(e)
 
 
+# 'nueva'/'última' are ordinary Spanish adjectives ("última milla", "nueva
+# era") — they only count as version markers ADJACENT to a version noun
+# ("última versión", "versión nueva", "entrega final"). Bare final/definitiva/
+# corregida remain markers (reviewed tradeoff: strongly version-shaped).
 VERSION_MARK = re.compile(
-    r"(?:^|[\s_\-.(])(v(?:ersi[oó]n)?\s*(\d+)|final(?:isim[ao])?|definitiv[ao]"
-    r"|[uú]ltim[ao]|nuev[ao]|corregid[ao]|\((\d+)\))(?:[\s_\-.)]|$)",
+    r"(?:^|[\s_\-.(])("
+    r"v(?:ersi[oó]n)?\s*(\d+)"
+    r"|(?:versi[oó]n|entrega)\s+(?:final|nueva|[uú]ltima|definitiva)"
+    r"|(?:[uú]ltima|nueva)\s+(?:versi[oó]n|entrega)"
+    r"|final(?:isim[ao])?|definitiv[ao]|corregid[ao]"
+    r"|\((\d+)\))(?:[\s_\-.)]|$)",
     re.IGNORECASE)
 
 
@@ -332,7 +340,7 @@ def main():
             stem = os.path.splitext(fr["name"])[0].strip()
             by_base.setdefault(strip_versions(stem), []).append(fr)
         surviving = []
-        for base, group in by_base.items():
+        for _vbase, group in by_base.items():
             # group by FULL stem: an export pair (Deck.pdf + Deck.pptx) shares
             # one stem and is NEVER a version relation — it survives together.
             stems = {}

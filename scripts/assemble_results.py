@@ -127,7 +127,8 @@ def main():
 
     results = []
 
-    def no_rev(fr, reason, flags=None, student="", status="no_revisado"):
+    def no_rev(fr, reason, flags=None, student="", status="no_revisado",
+               canvas_key=None):
         # every row carries the student's name — a NO REVISADO row whose
         # Estudiante column is blank makes the Excel unusable for TA triage.
         # status may also be:
@@ -137,13 +138,15 @@ def main():
         #   "reemplazada"    — an older version/duplicate superseded by a
         #       newer submission (Excel: REEMPLAZADA).
         results.append({"id": fr["id"], "file": fr["name"],
-                        "student": student,
+                        "student": student, "canvas_key": canvas_key,
                         "status": status, "status_reason": reason,
                         "disqualified": False, "flags": list(flags or [])})
 
-    def graded(fr, r, extra_flags=None, extra_notes=None, student_name=None):
+    def graded(fr, r, extra_flags=None, extra_notes=None, student_name=None,
+               canvas_key=None):
         row = dict(r)
         row["id"] = fr["id"]
+        row["canvas_key"] = canvas_key
         row["file"] = fr["name"]              # always the ORIGINAL filename
         row["status"] = "revisado"
         problems, _moved = normalize_review(row)
@@ -312,7 +315,8 @@ def main():
                 flags += nf
                 if nn:
                     note += " | AVISOS DEL INVENTARIO: " + nn
-                graded(primary, r, flags, note, e["student_name"])
+                graded(primary, r, flags, note, e["student_name"],
+                       canvas_key=e.get("canvas_key") or e["folder_id"])
             # "SÍ fue leído" may only be asserted for files the bundle
             # actually LISTED — anything else is a false certification that
             # suppresses the human follow-up (finding 4, 2026-08-15 review).
@@ -356,7 +360,8 @@ def main():
                 if nn:
                     note = ((note + " | ") if note else "") +                         "AVISOS DEL INVENTARIO: " + nn
                 graded(e["deck"], deck["result"], flags, note,
-                       e["student_name"])
+                       e["student_name"],
+                       canvas_key=e.get("canvas_key") or e["folder_id"])
             for fr in e.get("deck_source_of", []):
                 no_rev(fr, "archivo fuente (mismo contenido) de la "
                            f"presentación ya revisada '{e['deck']['name']}' — "
@@ -397,6 +402,24 @@ def main():
         return ids
 
     graded_ids = {row["id"] for row in results if row["status"] == "revisado"}
+
+    # in-folder version supersedes: if THIS folder produced no graded row,
+    # its REEMPLAZADA rows certify a grade that doesn't exist (round-3
+    # reviewer finding — sibling path of the cross-folder F2 fix)
+    for e in plan["folders"]:
+        if not e.get("superseded_files"):
+            continue
+        if folder_file_ids(e) & graded_ids:
+            continue
+        own = {fr["id"] for fr in e["superseded_files"]}
+        for row in results:
+            if row["status"] == "reemplazada" and row["id"] in own:
+                if "REVISAR MANUALMENTE" not in row["flags"]:
+                    row["flags"].append("REVISAR MANUALMENTE")
+                row["status_reason"] += (
+                    " | AVISO: la versión más reciente NO quedó calificada "
+                    "en esta corrida — revisar ESTA versión manualmente.")
+
     for e in plan["folders"]:
         target = e.get("superseded_by_id")
         if not target:
@@ -418,12 +441,51 @@ def main():
     # The checker can prove a capability is older than the accepted date; the
     # pipeline surfaces that loudly but never silently re-grades or DQs —
     # humans decide (same never-edit-verdicts rule as everywhere else).
-    checks_by_id = {c.get("row_id"): c for c in date_checks}
+    import unicodedata
+
+    def _norm_verdict(v):
+        v = unicodedata.normalize("NFKD", str(v or "").strip().lower())
+        return "".join(ch for ch in v if not unicodedata.combining(ch))
+
+    VALID_VERDICTS = {"confirmada", "mas_vieja", "no_concluyente"}
+    row_ids = {r.get("id") for r in results}
+    checks_by_id = {}
+    for c in date_checks:
+        rid = c.get("row_id")
+        if not rid or rid not in row_ids:
+            print(f"AVISO: date_check con row_id desconocido {rid!r} — "
+                  "veredicto DESCARTADO; corrige el id y re-ensambla.",
+                  file=sys.stderr)
+            continue
+        v = _norm_verdict(c.get("verdict"))
+        if v not in VALID_VERDICTS:
+            print(f"AVISO: date_check {rid} con verdict no reconocido "
+                  f"{c.get('verdict')!r} — tratado como no_concluyente.",
+                  file=sys.stderr)
+            v = "no_concluyente"
+        if v == "mas_vieja" and not (c.get("older_date")
+                                     and c.get("older_evidence_url")):
+            print(f"AVISO: date_check {rid} dice mas_vieja SIN older_date/"
+                  "older_evidence_url — degradado a no_concluyente.",
+                  file=sys.stderr)
+            v = "no_concluyente"
+        c = dict(c, verdict=v)
+        prev = checks_by_id.get(rid)
+        if prev:
+            # duplicate: the WORST verdict survives (mas_vieja > no_concl > conf)
+            rank = {"mas_vieja": 2, "no_concluyente": 1, "confirmada": 0}
+            print(f"AVISO: date_check duplicado para {rid} — se conserva el "
+                  "veredicto más severo.", file=sys.stderr)
+            if rank[v] <= rank[prev["verdict"]]:
+                continue
+        checks_by_id[rid] = c
     n_older = 0
+    n_applied = 0
     for row in results:
         c = checks_by_id.get(row.get("id"))
         if not c:
             continue
+        n_applied += 1
         v = c.get("verdict")
         if v == "mas_vieja":
             n_older += 1
@@ -447,8 +509,8 @@ def main():
                         "de fecha NO concluyente: "
                         + (c.get("notes") or "")).strip(" |")
     if date_checks:
-        print(f"date_checks aplicados: {len(checks_by_id)} "
-              f"({n_older} con evidencia de fecha más vieja)")
+        print(f"date_checks: {len(date_checks)} recibidos, {n_applied} "
+              f"aplicados ({n_older} con evidencia de fecha más vieja)")
 
     # ---- same-tool cross-student reconciliation ---------------------------
     groups = {}
