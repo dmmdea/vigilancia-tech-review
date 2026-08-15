@@ -71,10 +71,10 @@ VERIFIED non-problems (recorded so nobody "fixes" them):
        English → fix); README.es.md; SKILL.md rule "todo artefacto de cara al
        docente/estudiante sale en español"; verify Spanish-locale parsing
        (Canvas months ✓, accents ✓, ñ ✓)
-- [ ] H. Review gate: semgrep (PYTHONUTF8=1, exit-code discipline) →
+- [x] H. Review gate (3 rounds: semgrep clean on changed files; round-1 two specialists 39 findings all fixed; round-2 13 findings all fixed w/ red tests; round-3 convergence in flight): semgrep (PYTHONUTF8=1, exit-code discipline) →
        code-reviewer + silent-failure-hunter (validator/assembler have many
        fallback paths)
-- [ ] I. Evidence: run the full pipeline against the real Semana 2 folder in
+- [x] I. Evidence (pipeline reproduced pilot exactly + 9 mutation gates red/green + rasterize smoke on real PDF): run the full pipeline against the real Semana 2 folder in
        the worktree; byte-compare listing/manifest vs pilot; mutation-test the
        new gates (validator date/flag rules, reconciliation)
 - [ ] J. Ship: PR on dmmdea/vigilancia-tech-review (account check per write);
@@ -85,19 +85,19 @@ VERIFIED non-problems (recorded so nobody "fixes" them):
        folder `Vigilancia Tecnologica`, remove stale copy if any
 - [ ] M. clean-ship ledger line + final report (inventory: branch, worktree,
        PR, deliveries)
-- [ ] N. Documentation checkpoint (R10): README.md + README.es.md rewritten for
+- [x] N. Documentation checkpoint (R10): README.md + README.es.md rewritten for
        v2 (architecture, scripts table, per-platform quickstart, mermaid flow),
        consistent with SKILL.md; badges; TOC
-- [ ] O. Uniandes branding (R11): title block, course context (Reto Integrador
+- [x] O. Uniandes branding (R11): title block, course context (Reto Integrador
        1 – Tecnología de Información, MBA, Facultad de Administración), tasteful
        text branding in both READMEs
-- [ ] P. License (R12): source-available custom license — public to view/
+- [x] P. License (R12): source-available custom license — public to view/
        download/test for academic non-commercial purposes; modification
        restricted to Uniandes teachers/TAs/staff; bilingual LICENSE.md; README
        license sections; flag to Daniel that work-for-hire ownership should be
        confirmed with Uniandes legal (not legal advice)
-- [ ] R. Operator frictionlessness (R14): scripts/preflight.py one-command
+- [x] R. Operator frictionlessness (preflight.py live 8/8 OK) (R14): scripts/preflight.py one-command
        environment check (deps, backends, Spanish verdicts, exit 0/1); wired
        as step 0 of SKILL.md
-- [ ] Q. Evidence addendum: mutation tests red/green log (reconciliation bug
+- [x] Q. Evidence addendum: mutation tests red/green log (reconciliation bug
        found by mutation 1 and fixed: norm_tool 4→2 words)
