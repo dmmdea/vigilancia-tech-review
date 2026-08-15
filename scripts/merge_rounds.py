@@ -318,6 +318,7 @@ def main():
     if not any(name == rnd for name, _t in registry):
         resolved = []
         adopted = False
+        adopt_old_titles = []
         for name, btitles in registry:
             rk = btitles.get("Ranking", "")
             if (not adopted and name != rnd and rk
@@ -329,6 +330,7 @@ def main():
                 # adopt (round-3 finding 2: a duplicate adopt erased a
                 # round and doubled the Histórico column).
                 adopted = True
+                adopt_old_titles = list(btitles.values())
                 name = rnd
                 print(f"AVISO: la ronda reconstruida '{rk[10:]}' es la "
                       f"misma que '{rnd}' (título idéntico) — se refresca.",
@@ -343,8 +345,19 @@ def main():
                 # guidance would have overwritten the old round's grades).
                 mt = btitles.get("Meta", "")
                 mname = mt[len("Meta - "):] if mt else ""
-                if mt and len(mt) < 31:
-                    pass          # complete name ≠ rnd → different round
+                if mt and len(mt) < 31 and mname == rnd and not adopted:
+                    # complete Meta name EQUALS rnd → PROVES the same round
+                    # (round-4 finding: assuming "complete → different"
+                    # dead-ended a 22/23-char round's own refresh and the
+                    # clash message's advice then duplicated the week)
+                    adopted = True
+                    adopt_old_titles = list(btitles.values())
+                    name = rnd
+                    print(f"AVISO: la ronda reconstruida '{rk[10:]}' es la "
+                          f"misma que '{rnd}' (nombre completo en la hoja "
+                          "Meta) — se refresca.", file=sys.stderr)
+                elif mt and len(mt) < 31:
+                    pass          # complete name != rnd → different round
                 elif mname and not rnd.startswith(mname):
                     pass          # extended prefix disproves identity
                 else:
@@ -360,6 +373,13 @@ def main():
                     sys.exit(2)
             resolved.append((name, btitles))
         registry = resolved
+        # the adopted entry's OLD sheets (plain-truncated titles) must be
+        # replaced, not orphaned, when the new titles differ (Meta-adopt)
+        for old_t in adopt_old_titles:
+            if old_t and old_t.casefold() not in                     {t.casefold() for t in
+                     (sheet_title(k, rnd) for k in KINDS)}:
+                if old_t in wb.sheetnames:
+                    del wb[old_t]
     if sum(1 for name, _t in registry if name == rnd) > 1:
         print(f"ERROR: el registro contiene la ronda '{rnd}' más de una "
               "vez — registro corrupto; repara la hoja _Rondas antes de "
