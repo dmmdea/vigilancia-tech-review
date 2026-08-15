@@ -101,3 +101,15 @@ VERIFIED non-problems (recorded so nobody "fixes" them):
        as step 0 of SKILL.md
 - [x] Q. Evidence addendum: mutation tests red/green log (reconciliation bug
        found by mutation 1 and fixed: norm_tool 4→2 words)
+
+## Round 2 — feedback de la primera clase (R15-R18, 2026-08-15)
+
+Recibidos tras la primera clase con el skill en uso real. Se ejecutan DESPUÉS
+de cerrar lo pendiente (test Antigravity + ship de feat/live-harness-validation).
+
+| # | Request (verbatim intent) | Diseño previsto |
+|---|---|---|
+| R15 | Gestionar las dobles entregas para que no se pierdan en la revisión y se tome la entrega más reciente (también cubre carpeta duplicada) | Endurecer detección de duplicados más allá del canvas_key: nombre de estudiante normalizado entre carpetas; VERSIONES dentro de una misma carpeta (v1/FINAL → gana la más reciente, la anterior queda superseded, no "evidencia"); Excel inequívoco sobre cuál fila es la calificada |
+| R16 | Entregas con múltiples archivos: los archivos extra deben aparecer como SÍ revisados en el reporte | Nuevo estado "REVISADO (ANEXO)" (color propio) en make_excel + assembler para los archivos leídos dentro de la revisión integral — hoy dicen NO REVISADO con razón explicativa y se lee mal |
+| R17 | Filtro adicional SOLO sobre la ppt/pdf entregada: indicio de qué tan obvio es el uso sin filtro de IA (los estudiantes deben revisar/filtrar/mejorar manualmente) | Nuevo campo del revisor `indicio_ia` (1-5 + evidencia citada: frases de chatbot sin editar, plantilla genérica, artefactos de generación, estructura stock) — columna advisory en el Excel, NUNCA componente de la nota |
+| R18 | Columna adicional con feedback "sugerido" por estudiante (base interna del equipo docente; útil tenerla a mano aunque solo se entregue a quienes fallaron) | Nuevo campo `feedback_sugerido` (2-4 frases constructivas en español) en templates + schema + validador + columna en el Excel |
