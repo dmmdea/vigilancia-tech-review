@@ -95,6 +95,9 @@ Banda fronteriza 3.5–4.5 → agrega SIEMPRE el flag "VERIFICAR FECHA".
 Confianza "baja" → NUNCA descalifiques; flag "VERIFICAR FECHA" y explica.
 Discrepancia >1 mes entre declarada y verificada → flag "DISCREPANCIA FECHA".
 **El formato de la entrega NUNCA es motivo de descalificación.**
+Si marcas `disqualified = true`, escribe SIEMPRE en `dq_reason` una frase con el
+motivo (la edad verificada, o por qué es herramienta general sin función
+específica reciente) — una descalificación sin razón falla la validación.
 
 ### 5. Califica (escala 1.0–5.0, decimales permitidos)
 Aunque esté descalificada, califica igual los tres criterios.
@@ -118,9 +121,10 @@ NO regales nota: 3.0 es un trabajo correcto; 4.5+ exige evidencia sobresaliente.
 - `student`: solo el nombre, opcionalmente "(código NNNN)". Sin comentarios.
 - `tool`: máximo 70 caracteres. El detalle largo → `observations`.
 - `flags`: SOLO de esta lista cerrada — VERIFICAR FECHA · DISCREPANCIA FECHA ·
-  ENTREGA SIN PPT · REVISAR MANUALMENTE · SIN EVIDENCIA PROPIA ·
-  IMPACTO NO CUANTIFICADO · HERRAMIENTA GENERAL - FUNCION ESPECIFICA ·
-  EVIDENCIA NO LEGIBLE · EVIDENCIA DE ENVIO ANTERIOR INCLUIDA. Cualquier otra
+  REVISAR MANUALMENTE · SIN EVIDENCIA PROPIA · IMPACTO NO CUANTIFICADO ·
+  HERRAMIENTA GENERAL - FUNCION ESPECIFICA · EVIDENCIA NO LEGIBLE.
+  (ENTREGA SIN PPT, ENTREGA DUPLICADA, SPOT-CHECK FALLIDO y EVIDENCIA DE
+  ENVIO ANTERIOR INCLUIDA las asigna el ensamblador, no tú.) Cualquier otra
   observación libre va en `observations`, no como flag.
 
 ### 7. Devuelve SOLO este JSON (sin texto adicional)

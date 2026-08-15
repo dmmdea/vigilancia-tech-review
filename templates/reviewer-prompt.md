@@ -72,6 +72,9 @@ Si la verificación es de confianza "baja", NO descalifiques nunca: agrega
 Si hay discrepancia relevante entre fecha declarada y verificada (>1 mes), agrega el
 flag "DISCREPANCIA FECHA".
 El formato del archivo NUNCA es motivo de descalificación.
+Si marcas `disqualified = true`, escribe SIEMPRE en `dq_reason` una frase con el
+motivo (la edad verificada, o por qué es herramienta general sin función
+específica reciente) — una descalificación sin razón falla la validación.
 
 ### 5. Califica (escala 1.0–5.0, decimales permitidos)
 Aunque esté descalificada, califica igual los tres criterios (los TAs necesitan el dato).

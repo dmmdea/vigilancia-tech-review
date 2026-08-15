@@ -69,7 +69,8 @@ def main():
           "pip install -r requirements.txt")
     check("pypdf (conteo de páginas)", have_module("pypdf"), True,
           "pip install -r requirements.txt")
-    check("pymupdf (rasterizar PDFs)", have_module("fitz"), need_raster,
+    check("pymupdf (rasterizar PDFs)",
+          have_module("pymupdf") or have_module("fitz"), need_raster,
           "pip install pymupdf — obligatorio en harnesses sin visión de PDF")
 
     soffice = find_exe("soffice",
@@ -77,13 +78,14 @@ def main():
     ppt = com_available("PowerPoint.Application") if not soffice else False
     check("diapositivas→PDF (LibreOffice o PowerPoint)", bool(soffice or ppt),
           True, "instala LibreOffice (libreoffice.org) o Microsoft PowerPoint")
-    word = com_available("Word.Application")
+    word = com_available("Word.Application") if not soffice else False
     check("docx→PDF (Word o LibreOffice)", bool(word or soffice), True,
           "instala LibreOffice o Microsoft Word — sin esto las entregas .docx "
           "no se pueden revisar (¡regla de equidad!)")
     chrome = find_exe(
         "chrome", "msedge",
         r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+        r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
         r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe")
     check("html→PDF (Chrome/Edge headless)", bool(chrome), False,
           "instala Chrome o Edge — sin esto las entregas .html no se revisan")

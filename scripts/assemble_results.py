@@ -243,7 +243,8 @@ def main():
                 continue
             if bundle.get("problems"):
                 no_rev(primary, "revisión incompleta tras reintento — "
-                       + "; ".join(bundle["problems"]), ["REVISAR MANUALMENTE"])
+                       + "; ".join(bundle["problems"]), ["REVISAR MANUALMENTE"],
+                       student=e["student_name"])
             else:
                 r = dict(bundle["result"])
                 reviewed_list = r.pop("materials_reviewed", [])
@@ -257,7 +258,14 @@ def main():
                              "entregado con la misma rúbrica.")
                 if bdef.get("carried_forward"):
                     flags.append("EVIDENCIA DE ENVIO ANTERIOR INCLUIDA")
-                sf, sn = spotcheck_annotations(bundle)
+                # the bundle wrapper has no pages_total; give the 1-page
+                # exemption the bundle's own page knowledge (0 pdf pages =
+                # image-only submission = no slide numbers exist either)
+                bundle_sc = dict(bundle)
+                bpages = bdef.get("pdf_pages_total")
+                if bpages is not None and bpages <= 1:
+                    bundle_sc["pages_total"] = 1
+                sf, sn = spotcheck_annotations(bundle_sc)
                 flags += sf
                 if sn:
                     note += " | " + sn
@@ -290,7 +298,8 @@ def main():
         if deck:                               # pass 1 (deck-only)
             if deck.get("problems"):
                 no_rev(e["deck"], "revisión incompleta tras reintento — "
-                       + "; ".join(deck["problems"]), ["REVISAR MANUALMENTE"])
+                       + "; ".join(deck["problems"]), ["REVISAR MANUALMENTE"],
+                       student=e["student_name"])
             else:
                 flags, note = spotcheck_annotations(deck)
                 graded(e["deck"], deck["result"], flags, note,

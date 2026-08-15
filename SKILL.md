@@ -205,9 +205,9 @@ failing → `NO REVISADO`, reason "revisión incompleta", flag for humans. The v
 also normalizes fields (strict dates, bare student names, ≤70-char tool, controlled
 flag vocabulary; everything else moves to `observations`) — content is preserved,
 scores and justifications are never edited. Note the flag vocabulary split:
-reviewers emit the subset in the templates; `ENTREGA DUPLICADA`, `SPOT-CHECK
-FALLIDO` and `EVIDENCIA DE ENVIO ANTERIOR INCLUIDA` are assigned by the
-assembler, and `EMPATE TOP5` / `EDAD SIN CALCULAR` by `make_excel.py`.
+reviewers emit the subset in the templates; `ENTREGA SIN PPT`, `ENTREGA
+DUPLICADA`, `SPOT-CHECK FALLIDO` and `EVIDENCIA DE ENVIO ANTERIOR INCLUIDA`
+are assigned by the assembler, and `EMPATE TOP5` / `EDAD SIN CALCULAR` by `make_excel.py`.
 
 **Spot-check honesty on BOTH passes** — every ~4th review, deck AND bundle alike
 (the pilot spot-checked only deck reviews; the #1-ranked student came from the

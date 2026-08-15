@@ -69,7 +69,9 @@ def describe(items, use_images):
         if carried:
             suffix += f"\n   Nota: {carried}"
         if it.get("truncated_from"):
-            avail = it.get("pages") or len(it.get("page_images") or [])
+            # pages is the FULL count — the available count is what was
+            # actually rasterized (round-2 finding: "solo 80 de 80")
+            avail = len(it.get("page_images") or []) or it.get("pages")
             suffix += (f"\n   AVISO: material truncado — solo {avail} de "
                        f"{it['truncated_from']} páginas disponibles; el resto "
                        "NO fue revisado (flag REVISAR MANUALMENTE).")
@@ -82,6 +84,18 @@ def describe(items, use_images):
                 + suffix)
         elif k == "pdf":
             pages = it.get("pages")
+            if use_images:
+                # --images with no page_images = the operator skipped
+                # --rasterize: on this harness the reviewer CANNOT read a
+                # PDF — degrade LOUDLY, never silently
+                print(f"AVISO: --images activo pero «{label}» no tiene "
+                      "page_images (¿faltó prepare_materials --rasterize?) — "
+                      "el revisor probablemente NO pueda leer este PDF.",
+                      file=sys.stderr)
+                suffix += ("\n   AVISO: este PDF NO fue rasterizado; si tu "
+                           "herramienta no puede leer PDFs por páginas, "
+                           "repórtalo con el flag EVIDENCIA NO LEGIBLE en "
+                           "lugar de adivinar.")
             lines.append(
                 f"{n}. [PDF] «{label}» — {pages} páginas.\n"
                 f"   Ábrelo con tu herramienta de lectura en `{it['path']}` "
@@ -201,7 +215,10 @@ def main():
 
         should_have_materials = (
             (e["status"] == "no_deck" and e.get("no_deck_files"))
-            or (e["status"] == "review" and e.get("evidence")))
+            or (e["status"] == "review" and e.get("evidence"))
+            # --all makes EVERY review-status student bundle-dependent, so a
+            # missing materials entry is just as blocking for them
+            or (include_all and e["status"] == "review"))
         if should_have_materials and m is None:
             print(f"ERROR: review_plan requiere bundle para "
                   f"'{e['student_name']}' pero materials.json no contiene su "
@@ -258,6 +275,8 @@ def main():
             "materials_block": block,
             "material_labels": labels,
             "materials_expected": len(labels),
+            "pdf_pages_total": sum(it.get("pages") or 0 for it in items
+                                   if it["kind"] == "pdf"),
             "was_no_deck": was_no_deck,
             "no_deck_note": note,
             "carried_forward": [

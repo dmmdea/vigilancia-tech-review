@@ -73,7 +73,8 @@ STUDENT_OK = re.compile(r"^[^()]{0,60}(\(c[oó]digo [\w]+\))?$", re.IGNORECASE)
 
 
 def find_dates(text):
-    """All distinct ISO-normalizable dates in `text`, in order of appearance."""
+    """All distinct ISO-normalizable dates in `text` (grouped by pattern:
+    ISO first, then Spanish long-form, then dd/mm/yyyy)."""
     found = []
     for m in DATE_FIND.finditer(text):
         found.append(m.group(0))
@@ -87,6 +88,11 @@ def find_dates(text):
     for f in found:
         if f not in seen:
             seen.append(f)
+    # a month-precision rendering of a date whose full form is also present is
+    # the SAME date, not a second candidate (e.g. "2026-07" + "2026-07-16")
+    full = [f for f in seen if len(f) == 10]
+    seen = [f for f in seen
+            if len(f) == 10 or not any(d.startswith(f) for d in full)]
     return seen
 
 # Reviewer wordings that MEAN a canonical flag but don't prefix-match it —
@@ -100,7 +106,6 @@ FLAG_ALIASES = {
     "SIN PPT": "ENTREGA SIN PPT",
     "SIN DIAPOSITIVAS": "ENTREGA SIN PPT",
     "FORMATO NO-PPT": "ENTREGA SIN PPT",
-    "SIN EVIDENCIA": "SIN EVIDENCIA PROPIA",
     "IMPACTO SIN CUANTIFICAR": "IMPACTO NO CUANTIFICADO",
     "SIN CUANTIFICACION DE IMPACTO": "IMPACTO NO CUANTIFICADO",
     "REVISION MANUAL": "REVISAR MANUALMENTE",
@@ -127,8 +132,10 @@ def normalize_review(r, expect_pages=None, expect_materials=None):
     f0 = r.get("flags")
     if isinstance(f0, str):
         r["flags"] = [f0]
-    elif f0 is not None and not isinstance(f0, list):
-        r["flags"] = [str(f0)]
+    elif not isinstance(f0, list):
+        # covers None AND any other drifted scalar — a null here once crashed
+        # the entire assembly (TypeError on membership test)
+        r["flags"] = [] if f0 is None else [str(f0)]
     obs = [r.get("observations")] if r.get("observations") else []
 
     # --- scores & justifications (hard failures, never auto-fixed) ---------
@@ -245,8 +252,10 @@ def normalize_review(r, expect_pages=None, expect_materials=None):
         base = f_.split(":")[0].split("(")[0].strip().upper()
         canon = next((c for c in CANONICAL_FLAGS if _flag_match(base, c)), None)
         if canon is None:
-            canon = next((v for a, v in FLAG_ALIASES.items()
-                          if _flag_match(base, a)), None)
+            # aliases match EXACTLY — prefix-matching short aliases like
+            # "SIN EVIDENCIA" turned "SIN EVIDENCIA DE IMPACTO" into a
+            # PoC-weighted accusation of no OWN evidence (round-2 finding)
+            canon = FLAG_ALIASES.get(base)
         if canon:
             if canon not in kept:
                 kept.append(canon)
