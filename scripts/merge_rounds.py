@@ -100,10 +100,20 @@ def load_registry(wb):
             titles = {}
             for k in KINDS:
                 want = f"{k} - {rnd}"
-                hit = next((t for t in wb.sheetnames if t == want
-                            or t.startswith(want)), None)
-                if hit:
-                    titles[k] = hit
+                # exact match wins OUTRIGHT; a prefix hit only counts when
+                # UNIQUE — a disjunctive next() bound whichever round came
+                # first in tab order and could hand this entry ANOTHER
+                # round's sheets (round-3 finding 1: silent grade loss)
+                if want in wb.sheetnames:
+                    titles[k] = want
+                    continue
+                cands = [t for t in wb.sheetnames if t.startswith(want)]
+                if len(cands) == 1:
+                    titles[k] = cands[0]
+                elif cands:
+                    print(f"AVISO: varias hojas coinciden con '{want}' "
+                          f"({cands}) — ambigua, se omite del registro "
+                          "reconstruido.", file=sys.stderr)
             out.append((rnd, titles))
         if out:
             print(f"AVISO: maestro sin hoja de registro '{REGISTRY}' — "
@@ -189,15 +199,25 @@ def rebuild_historico(wb, registry):
             if key in data and name in data[key]["grades"]:
                 # two REVISADO rows in the SAME round collapsing onto one
                 # key (blank Clave + shared display name) would silently
-                # drop a grade — disambiguate instead (round-2 finding 5)
+                # drop a grade — disambiguate with a TUPLE key, which can
+                # never equal a real string Clave or display name (round-3
+                # finding 3: an "X (2)" string key merged the duplicate
+                # into a DIFFERENT real student), and label the extra row
+                # so the two aren't visually identical.
                 print(f"AVISO: dos filas REVISADO de la ronda '{name}' "
                       f"comparten la clave '{key}' — se separan en filas "
                       "distintas del Histórico; verificar la identidad de "
                       "esos estudiantes.", file=sys.stderr)
                 base, n = key, 2
-                while key in data and name in data[key]["grades"]:
-                    key = f"{base} ({n})"
+                while (base, n) in data and name in data[(base, n)]["grades"]:
                     n += 1
+                key = (base, n)
+                if key not in data:
+                    data[key] = {"name": f"{est} (fila duplicada {n})",
+                                 "grades": {}}
+                    order.append(key)
+                data[key]["grades"][name] = row[i_fin]
+                continue    # keep the duplicate's marked display name
             if key not in data:
                 data[key] = {"name": est, "grades": {}}
                 order.append(key)
@@ -297,31 +317,54 @@ def main():
     #    refuse with both exits spelled out.
     if not any(name == rnd for name, _t in registry):
         resolved = []
+        adopted = False
         for name, btitles in registry:
             rk = btitles.get("Ranking", "")
-            if name != rnd and rk and \
-                    rk == sheet_title("Ranking", rnd):
+            if (not adopted and name != rnd and rk
+                    and rk == sheet_title("Ranking", rnd)):
                 # EXACT title match only: the reconstructed hash-form name
                 # round-trips byte-identical. Casefolding here would make a
                 # case-variant round name silently adopt-and-refresh instead
-                # of refusing (the F3 guarantee).
+                # of refusing (the F3 guarantee). At most ONE entry may
+                # adopt (round-3 finding 2: a duplicate adopt erased a
+                # round and doubled the Histórico column).
+                adopted = True
                 name = rnd
                 print(f"AVISO: la ronda reconstruida '{rk[10:]}' es la "
                       f"misma que '{rnd}' (título idéntico) — se refresca.",
                       file=sys.stderr)
             elif (name != rnd and len(rk) == 31 and "~" not in rk
                     and rnd.startswith(name)):
-                print(f"ERROR: el maestro contiene una ronda reconstruida "
-                      f"'{name}' (título truncado por la versión anterior) "
-                      f"que coincide con el inicio de '{rnd}'. No es posible "
-                      "saber mecánicamente si es la misma ronda. Si ES la "
-                      f"misma, re-mergéala con --round=\"{name}\"; si es una "
-                      "ronda DISTINTA, usa un nombre que no empiece igual, o "
-                      "regenera el maestro desde cero con los Excel por "
-                      "ronda. NO se modificó nada.", file=sys.stderr)
-                sys.exit(2)
+                # Before refusing, use the Meta title to decide what the
+                # Ranking truncation hid (Meta keeps 3 more name chars):
+                # a complete Meta name, or an extended prefix rnd does NOT
+                # match, PROVES this is a different round (round-3
+                # finding 4: a legitimate new round was refused, and the
+                # guidance would have overwritten the old round's grades).
+                mt = btitles.get("Meta", "")
+                mname = mt[len("Meta - "):] if mt else ""
+                if mt and len(mt) < 31:
+                    pass          # complete name ≠ rnd → different round
+                elif mname and not rnd.startswith(mname):
+                    pass          # extended prefix disproves identity
+                else:
+                    print(f"ERROR: el maestro contiene una ronda "
+                          f"reconstruida '{name}' (título truncado por la "
+                          "versión anterior) que coincide con el inicio de "
+                          f"'{rnd}'. No es posible saber mecánicamente si "
+                          "es la misma ronda. Si ES la misma, re-mergéala "
+                          f"con --round=\"{name}\"; si es una ronda "
+                          "DISTINTA, usa un nombre que no empiece igual, o "
+                          "regenera el maestro desde cero con los Excel "
+                          "por ronda. NO se modificó nada.", file=sys.stderr)
+                    sys.exit(2)
             resolved.append((name, btitles))
         registry = resolved
+    if sum(1 for name, _t in registry if name == rnd) > 1:
+        print(f"ERROR: el registro contiene la ronda '{rnd}' más de una "
+              "vez — registro corrupto; repara la hoja _Rondas antes de "
+              "continuar. NO se modificó nada.", file=sys.stderr)
+        sys.exit(2)
 
     titles = {k: sheet_title(k, rnd) for k in KINDS}
 
@@ -386,8 +429,16 @@ def main():
         for leftover in (tmp.name, staged):
             try:
                 os.unlink(leftover)
-            except OSError:
+            except FileNotFoundError:
                 pass
+            except OSError:
+                if leftover == staged:
+                    # the staged copy carries student grades in the
+                    # Drive-synced folder — never leave it behind silently
+                    print(f"AVISO: no se pudo borrar el temporal "
+                          f"'{master_path}.tmp~' — bórralo a mano "
+                          "(contiene notas de estudiantes).",
+                          file=sys.stderr)
     print(f"OK maestro '{os.path.basename(master_path)}': ronda '{rnd}' "
           f"{'reemplazada' if replaced else 'agregada'} · rondas presentes: "
           f"{rounds} · estudiantes en Histórico: {n_students}")
