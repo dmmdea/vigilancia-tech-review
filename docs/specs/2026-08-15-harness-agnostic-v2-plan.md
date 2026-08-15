@@ -113,3 +113,32 @@ de cerrar lo pendiente (test Antigravity + ship de feat/live-harness-validation)
 | R16 | Entregas con múltiples archivos: los archivos extra deben aparecer como SÍ revisados en el reporte | Nuevo estado "REVISADO (ANEXO)" (color propio) en make_excel + assembler para los archivos leídos dentro de la revisión integral — hoy dicen NO REVISADO con razón explicativa y se lee mal |
 | R17 | Filtro adicional SOLO sobre la ppt/pdf entregada: indicio de qué tan obvio es el uso sin filtro de IA (los estudiantes deben revisar/filtrar/mejorar manualmente) | Nuevo campo del revisor `indicio_ia` (1-5 + evidencia citada: frases de chatbot sin editar, plantilla genérica, artefactos de generación, estructura stock) — columna advisory en el Excel, NUNCA componente de la nota |
 | R18 | Columna adicional con feedback "sugerido" por estudiante (base interna del equipo docente; útil tenerla a mano aunque solo se entregue a quienes fallaron) | Nuevo campo `feedback_sugerido` (2-4 frases constructivas en español) en templates + schema + validador + columna en el Excel |
+
+## Round 2b — feedback adicional (R19-R20, 2026-08-15)
+
+| # | Request | Diseño previsto |
+|---|---|---|
+| R19 | Un top-5 llevaba >4 meses de lanzamiento: el gate de fechas y la verificación NO bastaron — mejorarlo seriamente. NO tocar el ranking ya entregado; corregir para la próxima corrida | Causa raíz identificada (fila Notion 3.5: el revisor DETECTÓ que la funcionalidad demostrada era de feb-2026 (5.7 meses) pero verificó la fecha de la ETIQUETA declarada y no descalificó). Fix doble: (a) regla endurecida en templates — la fecha que gobierna es SIEMPRE la de la funcionalidad DEMOSTRADA; un rebranding/versión nueva de una función vieja hereda la fecha vieja; (b) paso mecánico nuevo: verificación adversarial independiente de fechas sobre TODO candidato top-N y borderline antes de entregar (template dedicado, framing de refutación: "demuestra que esta función es MÁS VIEJA de lo declarado"), desacuerdo → VERIFICAR FECHA + nota, nunca silencioso |
+| R20 | Uso multi-ronda: refrescar la salida con rondas adicionales de entregas SIN borrar el histórico de rondas anteriores | `scripts/merge_rounds.py`: workbook maestro con hojas por ronda (Ranking-<ronda>, Detalle-<ronda>, Meta-<ronda>) + hoja "Histórico" (nota final por estudiante por ronda); re-entrega de una ronda REEMPLAZA solo sus propias hojas, jamás las de otras rondas; SKILL.md entrega round-aware |
+
+Nota: la re-entrega del Excel S2 con los nuevos estados queda CANCELADA por
+instrucción de Daniel ("no modificar el ranking ya entregado") — S2 entra al
+maestro histórico tal cual en la próxima entrega.
+
+## Estado (2026-08-15, rama feat/class1-feedback)
+
+R15-R18: implementados (commit b54d398) + fixes de la ronda de cazadores.
+R19-R20: implementados (commit e6bedab) — templates endurecidos +
+date-check-prompt.md + paso 5bis en SKILL.md; merge_rounds.py + entrega
+round-aware en SKILL.md paso 7.
+Revisión consolidada: 6 hallazgos (2 críticos: colisión de títulos a 31
+chars que BORRABA rondas; Histórico partido por nombres libres) — TODOS
+corregidos con red/green ejecutado (commit 5cff626). semgrep limpio.
+Regresión del piloto: 95 filas, 0 no_revisado. Ronda de convergencia
+despachada sobre 5cff626; ship al quedar NOTHING NEW.
+
+## Convergencia y cierre (2026-08-15)
+5 rondas adversariales sobre feat/class1-feedback: 6→5→3→1→0 hallazgos
+(cada uno reproducido por ejecución y corregido con red/green). Antigravity
+verificado E2E en vivo (adaptador actualizado). Ronda 5: NOTHING NEW —
+rama lista para merge bajo la autorización permanente R13.

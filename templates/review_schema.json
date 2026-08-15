@@ -103,6 +103,20 @@
   },
   "evidence_notes": {
    "type": "string"
+  },
+  "indicio_ia": {
+   "type": [
+    "integer",
+    "null"
+   ],
+   "minimum": 1,
+   "maximum": 5
+  },
+  "indicio_ia_evidencia": {
+   "type": "string"
+  },
+  "feedback_sugerido": {
+   "type": "string"
   }
  },
  "required": [
@@ -122,6 +136,9 @@
   "materials_reviewed",
   "pages_read",
   "justification",
-  "evidence_notes"
+  "evidence_notes",
+  "indicio_ia",
+  "indicio_ia_evidencia",
+  "feedback_sugerido"
  ]
 }

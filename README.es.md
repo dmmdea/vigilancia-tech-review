@@ -55,6 +55,12 @@ flowchart LR
   reales, manejo de entregas duplicadas con arrastre de evidencia, y reconciliación de
   fechas entre estudiantes que presentaron la misma herramienta.
 - **Todo lo que ve el docente sale en español** — la clase se dicta en español.
+- **Estados más allá de calificado:** `REVISADO (ANEXO)` (archivo leído dentro
+  de la revisión integral del estudiante), `REEMPLAZADA` (versión anterior o
+  duplicado) — más columnas advisory `Indicio IA (1-5)` (señal de IA sin
+  filtrar, nunca parte de la nota) y `Feedback sugerido` por estudiante. La
+  columna `Clave` (id Canvas estable del estudiante) ancla el `Histórico`
+  multi-ronda, inmune a variaciones del nombre visible entre rondas.
 
 ## Agnóstico al harness por diseño
 
@@ -84,6 +90,7 @@ Los harnesses sin visión nativa de páginas PDF usan el rasterizador incluido
 | `scripts/validate_review.py` | El gate mecánico de equidad (fuente única de verdad) |
 | `scripts/assemble_results.py` | Fusión de dos pasadas + reconciliación por herramienta |
 | `scripts/convert_to_pdf.py` · `make_excel.py` | Diapositivas→PDF · Excel final |
+| `scripts/merge_rounds.py` | Maestro multi-ronda — hojas por ronda + `Histórico` transversal; las rondas anteriores jamás se borran |
 | `templates/` | Prompts del revisor (español): entrega simple + bundle multiformato |
 | `references/` | Adaptadores por plataforma |
 | `docs/specs/` | Planes de diseño y de corrida |

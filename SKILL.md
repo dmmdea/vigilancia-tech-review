@@ -200,6 +200,11 @@ python "$SKILL_DIR/scripts/validate_review.py" "<review.json>" --expect-pages=N 
 python "$SKILL_DIR/scripts/validate_review.py" "<review.json>" --expect-materials="a|b|c" --normalized-out="<review.json>"
 ```
 
+Pass `--require-extended` on these fresh per-review calls: it enforces the
+class-feedback fields — `indicio_ia` (1-5 advisory AI-slop signal on the
+delivered material; NEVER a grade component) and `feedback_sugerido` (2-4
+Spanish sentences of draft student feedback for the teaching team).
+
 Exit 2 → re-dispatch that student ONCE with the `problems` list appended. Still
 failing → `NO REVISADO`, reason "revisión incompleta", flag for humans. The validator
 also normalizes fields (strict dates, bare student names, ≤70-char tool, controlled
@@ -227,11 +232,31 @@ Expects `deck_reviews.json` / `bundle_reviews.json` in `$WORK` (shape:
 `{"reviewed": [{"folder_id", "result", "problems": [], "spotcheck": null | {"plausible": bool, "notes": str}}]}`
 — a spotcheck object without a `plausible` key is treated as INCONCLUSIVE, never
 as failed).
-Produces `results.json`: one row per submitted FILE — one graded row per student, the
-rest NO REVISADO with reasons pointing at the graded row. It re-applies the validator
+Produces `results.json`: one row per submitted FILE — one graded row per student;
+files READ inside that student's integral review get `revisado_anexo`
+(Excel: **REVISADO (ANEXO)**, green tint), superseded duplicates and older
+in-folder versions get `reemplazada` (Excel: **REEMPLAZADA**, violet tint),
+and only genuinely unreviewed material stays NO REVISADO. It re-applies the validator
 normalization (defense in depth) and runs **same-tool reconciliation**: students whose
 verified dates for the same tool differ by >1 month all get `VERIFICAR FECHA` — the
 reviewers verified independently, so this is where disagreement becomes visible.
+
+### 5bis. Adversarial date re-verification — top candidates NEVER ship unchecked
+
+The pilot shipped a top-5 row whose demonstrated capability was 5.7 months old:
+the reviewer NOTED the older date but anchored `age_months` to the new version
+label, and nothing re-checked the top. Now mandatory before the Excel:
+
+For **every top-8 candidate**, every row with `age_months` in 2.5–4.5, and
+every row whose notes mention an earlier version/feature: dispatch one
+fresh-context checker per row with `templates/date-check-prompt.md`
+(refutation framing — its job is to prove the capability is OLDER). Collect
+verdicts into `$WORK/date_checks.json`
+(`{"checks": [{"row_id", "verdict", "older_date", "older_evidence_url",
+"older_capability", "notes"}]}`) and re-run `assemble_results.py` — verdicts
+become loud flags (`VERIFICAR FECHA` + `DISCREPANCIA FECHA` +
+`REVISAR MANUALMENTE` with the evidence URL); the pipeline never silently
+re-grades or disqualifies. A top-5 that survives this pass has earned it.
 
 ### 6. Generate the Excel
 
@@ -248,11 +273,19 @@ final grade (single source of truth: 0.50/0.25/0.25, DQ → 1.0) and fails (exit
 naming any listed entry with no row. Fix the missing rows; never work around the gate.
 Sheets: **Ranking**, **Detalle**, **Meta**.
 
-### 7. Deliver
+### 7. Deliver — multi-round master, history is sacred
 
-Copy the Excel to the delivery folder the user confirmed (a local Drive-synced path —
-it syncs on its own). Replace the previous run's file if one is there; never leave two
-versions side by side.
+The course runs weekly rounds. Delivery goes through the MASTER workbook:
+
+```bash
+python "$SKILL_DIR/scripts/merge_rounds.py" "<delivery>/Resultados-Vigilancia-Tecnologica-MAESTRO.xlsx" "$WORK/res.xlsx" --round="Semana N"
+```
+
+Adds this round as its own sheet trio (`Ranking - Semana N`, `Detalle - …`,
+`Meta - …`) and rebuilds the `Histórico` sheet (final grade per student per
+round). Re-delivering the SAME round replaces only that round's sheets;
+**sheets of other rounds are never touched or deleted.** The master lives in
+the Drive-synced delivery folder the user confirmed.
 
 ### 8. Report
 
@@ -271,7 +304,13 @@ veredicto.
   Low-confidence verification → `age_months` stays null, flag `VERIFICAR FECHA`, never DQ.
 - Border band 3.5–4.5 months always carries flag `VERIFICAR FECHA`.
 - On a resubmission, grade the LATEST; evidence attached only to an earlier attempt
-  rides along flagged (`build_bundles.py` does this automatically).
+  rides along flagged (`build_bundles.py` does this automatically). Within one
+  folder, version-marked files (v1/v2/FINAL/(2)) resolve to the most recent —
+  older versions become REEMPLAZADA rows. Cross-folder duplicates supersede
+  only on a matching Canvas key; same-name-different-folder is FLAGGED for a
+  human, never auto-discarded (two students can share a name).
+- `indicio_ia` is advisory only: it never changes scores and never
+  disqualifies — it signals unfiltered AI dumping for the teaching team.
 - Never edit a reviewer's scores or justifications. Field normalization relocates
   out-of-format content; it never changes verdicts. If a verdict looks off, flag it —
   humans decide.

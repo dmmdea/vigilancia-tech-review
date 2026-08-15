@@ -50,6 +50,16 @@ prensa confiable). Reglas:
 - Si la herramienta tiene versiones/funciones, la fecha que cuenta es la del
   lanzamiento de LO QUE EL ESTUDIANTE USÓ (p. ej. una versión "turbo" cuenta desde el
   lanzamiento de ESA versión, no del producto original).
+- **LA FUNCIONALIDAD DEMOSTRADA MANDA (regla dura, causa real de un error
+  grave):** identifica QUÉ capacidad ejercita de verdad la PoV y fecha ESA
+  capacidad. Si el estudiante etiqueta una versión nueva (p. ej. "X 3.5")
+  pero lo demostrado ya existía en una versión/función anterior, la fecha que
+  gobierna `verified_launch_date` y `age_months` es la de la capacidad
+  ANTERIOR — un rebranding o número de versión nuevo NO rejuvenece una
+  función vieja. En ese caso agrega DISCREPANCIA FECHA y explica ambas fechas
+  en `evidence_notes`. PROHIBIDO dejar la fecha más vieja solo como nota
+  mientras `age_months` se calcula con la etiqueta nueva: eso desactiva el
+  filtro de exclusión exactamente cuando más importa.
 - Calcula `age_months` = meses (con un decimal) entre la fecha verificada y {{run_date}}.
   Con confianza "alta" o "media", `age_months` DEBE ser un número (se valida
   mecánicamente). Si la confianza es "baja", deja `age_months` en `null` (nunca
@@ -93,6 +103,27 @@ En cada justificación cita slides concretas ("slide 4: captura del dashboard co
 Si el archivo tiene UNA sola página, cita elementos concretos de la lámina en su lugar.
 NO regales nota: 3.0 es un trabajo correcto; 4.5+ exige evidencia sobresaliente.
 
+### 5bis. Indicio de IA sin filtro — SOLO sobre el material entregado
+El curso permite usar IA; lo que se señala es entregarla SIN el trabajo manual
+de revisar, filtrar y mejorar. Evalúa `indicio_ia` (entero 1-5) sobre el
+material entregado, con evidencia citada en `indicio_ia_evidencia`:
+- 1 = claramente curado a mano (voz propia, datos propios integrados, diseño
+  intencional, sin artefactos)
+- 3 = mezcla: base de IA con edición parcial visible
+- 5 = volcado directo de IA sin filtro: frases de chatbot sin editar ("Claro,
+  aquí tienes...", transiciones genéricas), estructura de plantilla stock,
+  artefactos de generación (placeholders, markdown sin renderizar, texto
+  cortado), uniformidad sin voz propia, inconsistencias entre secciones.
+Esta señal es ADVISORY para el equipo docente: NO afecta poc/impacto/
+comunicacion ni descalifica. Sé específico en la evidencia (qué slide/página,
+qué frase o artefacto).
+
+### 5ter. Feedback sugerido
+Escribe en `feedback_sugerido` 2-4 frases EN ESPAÑOL dirigidas al estudiante:
+qué hizo bien (concreto) y qué mejorar la próxima vez (accionable). Es un
+borrador interno del equipo docente — tono constructivo y directo, sin notas
+numéricas dentro del texto.
+
 ### 6. Formato de los campos — ESTRICTO (se valida mecánicamente)
 - `declared_launch_date` y `verified_launch_date`: SOLO "YYYY-MM-DD", "YYYY-MM"
   o "". Nunca prosa, nunca dos fechas. Contexto adicional → `observations`.
@@ -102,6 +133,7 @@ NO regales nota: 3.0 es un trabajo correcto; 4.5+ exige evidencia sobresaliente.
   REVISAR MANUALMENTE · SIN EVIDENCIA PROPIA · IMPACTO NO CUANTIFICADO ·
   HERRAMIENTA GENERAL - FUNCION ESPECIFICA · EVIDENCIA NO LEGIBLE.
   Cualquier otra observación libre va en `observations`, no como flag.
+- `indicio_ia`: entero 1-5 (nunca decimal, nunca texto); `feedback_sugerido`: obligatorio, 2-4 frases.
 
 ### 7. Devuelve SOLO este JSON (sin texto adicional)
 ```json
@@ -119,6 +151,9 @@ NO regales nota: 3.0 es un trabajo correcto; 4.5+ exige evidencia sobresaliente.
   "scores": {"poc": null, "impacto": null, "comunicacion": null},
   "flags": [],
   "observations": "",
+  "indicio_ia": null,
+  "indicio_ia_evidencia": "",
+  "feedback_sugerido": "",
   "pages_total": {{pages_total}},
   "pages_read": null,
   "justification": {"poc": "", "impacto": "", "comunicacion": ""},

@@ -43,22 +43,30 @@ HEADER_FONT = Font(bold=True, color="FFFFFF")
 TOP5_FILL = PatternFill("solid", fgColor="FDE68A")
 DQ_FILL = PatternFill("solid", fgColor="FECACA")
 NOREV_FILL = PatternFill("solid", fgColor="E5E7EB")
+ANEXO_FILL = PatternFill("solid", fgColor="D1FAE5")    # leído en la revisión
+REEMP_FILL = PatternFill("solid", fgColor="EDE9FE")    # versión reemplazada
 THIN = Border(*[Side(style="thin", color="D1D5DB")] * 4)
 
 RANK_COLS = [
     ("Posición", 9), ("Top 5", 7), ("Archivo", 38), ("Estudiante", 24),
+    ("Clave", 12),
     ("Herramienta", 26), ("Fecha lanz. declarada", 15),
     ("Fecha lanz. verificada", 15), ("Fuente verificación", 40),
     ("Confianza", 10), ("Edad (meses)", 9), ("¿Descalificado?", 13),
     ("Razón DQ", 30), ("PoC (50%)", 10), ("Impacto (25%)", 10),
-    ("Comunicación (25%)", 12), ("Nota final", 10), ("Flags revisión humana", 28),
-    ("Estado", 12), ("Detalle estado", 30),
+    ("Comunicación (25%)", 12), ("Nota final", 10),
+    ("Indicio IA (1-5)", 10),
+    ("Flags revisión humana", 28),
+    ("Estado", 16), ("Detalle estado", 30),
 ]
 
 DETAIL_COLS = [
     ("Archivo", 38), ("Herramienta", 24), ("Slides leídas / total", 12),
     ("Justificación PoC", 60), ("Justificación Impacto", 60),
-    ("Justificación Comunicación", 60), ("Notas de evidencia", 60),
+    ("Justificación Comunicación", 60),
+    ("Feedback sugerido (borrador interno)", 60),
+    ("Evidencia indicio IA", 50),
+    ("Notas de evidencia", 60),
 ]
 
 
@@ -83,12 +91,13 @@ def normalize(r: dict) -> None:
         if "EDAD SIN CALCULAR" not in r["flags"]:
             r["flags"].append("EDAD SIN CALCULAR")
     status = r.get("status")
-    if status not in ("revisado", "no_revisado"):
+    if status not in ("revisado", "no_revisado", "revisado_anexo",
+                      "reemplazada"):
         r["status"] = "no_revisado"
         r.setdefault("status_reason", "estado ausente o inválido en results.json")
         r["_final"] = None
         return
-    if status == "no_revisado":
+    if status in ("no_revisado", "revisado_anexo", "reemplazada"):
         r["_final"] = None
         return
     if r.get("disqualified"):
@@ -116,10 +125,13 @@ def normalize(r: dict) -> None:
 
 
 def sort_key(r: dict):
-    reviewed = r.get("status") == "revisado"
+    status = r.get("status")
     dq = bool(r.get("disqualified"))
     final = r.get("_final")
-    group = 0 if (reviewed and not dq) else (1 if reviewed else 2)
+    if status == "revisado":
+        group = 1 if dq else 0
+    else:
+        group = {"revisado_anexo": 2, "reemplazada": 3}.get(status, 4)
     return (group, -(final if final is not None else 0.0))
 
 
@@ -241,10 +253,15 @@ def main() -> None:
         else:
             position = ""
         s = r.get("scores") or {}
+        status = r.get("status")
+        estado = {"revisado": "REVISADO",
+                  "revisado_anexo": "REVISADO (ANEXO)",
+                  "reemplazada": "REEMPLAZADA"}.get(status, "NO REVISADO")
         row = [
             position,
             "⭐ TOP 5" if in_top5 else "",
-            r.get("file", ""), r.get("student", ""), r.get("tool", ""),
+            r.get("file", ""), r.get("student", ""),
+            r.get("canvas_key", ""), r.get("tool", ""),
             r.get("declared_launch_date", ""), r.get("verified_launch_date", ""),
             r.get("verification_source", ""), r.get("verification_confidence", ""),
             r.get("age_months", ""),
@@ -252,19 +269,22 @@ def main() -> None:
             r.get("dq_reason", ""),
             s.get("poc", ""), s.get("impacto", ""), s.get("comunicacion", ""),
             r["_final"] if r["_final"] is not None else "",
+            r.get("indicio_ia", ""),
             ", ".join(r.get("flags", [])),
-            "REVISADO" if reviewed else "NO REVISADO",
+            estado,
             r.get("status_reason", ""),
         ]
         fill = (TOP5_FILL if in_top5
                 else DQ_FILL if (reviewed and dq)
+                else ANEXO_FILL if status == "revisado_anexo"
+                else REEMP_FILL if status == "reemplazada"
                 else NOREV_FILL if not reviewed else None)
         for j, v in enumerate(row, 1):
             c = ws.cell(row=i, column=j, value=v)
             c.border = THIN
             if fill:
                 c.fill = fill
-            if j in (13, 14, 15, 16):
+            if j in (14, 15, 16, 17):
                 c.number_format = "0.00"
 
     ws2 = wb.create_sheet("Detalle")
@@ -275,6 +295,8 @@ def main() -> None:
             r.get("file", ""), r.get("tool", ""),
             f'{r.get("pages_read", "?")} / {r.get("pages_total", "?")}',
             j.get("poc", ""), j.get("impacto", ""), j.get("comunicacion", ""),
+            r.get("feedback_sugerido", ""),
+            r.get("indicio_ia_evidencia", ""),
             r.get("evidence_notes", ""),
         ]
         for k, v in enumerate(row, 1):
@@ -288,6 +310,12 @@ def main() -> None:
     meta["A3"], meta["B3"] = "Regla de corte", ("> 4 meses desde lanzamiento verificado → 1.0; "
                                                 "zona 3.5–4.5 meses lleva flag VERIFICAR FECHA")
     meta["A4"], meta["B4"] = "Ponderación", "PoC 50% · Impacto 25% · Comunicación 25%"
+    meta["A6"], meta["B6"] = "Indicio IA (1-5)", ("señal ADVISORY de uso de IA sin filtro sobre el material "
+                                                  "entregado (1=curado a mano, 5=volcado sin filtrar); NUNCA "
+                                                  "es componente de la nota")
+    meta["A7"], meta["B7"] = "Estados", ("REVISADO=fila calificada · REVISADO (ANEXO)=archivo leído dentro "
+                                          "de la revisión integral del estudiante · REEMPLAZADA=versión "
+                                          "anterior superada por una entrega más reciente · NO REVISADO=requiere humano")
     meta["A5"], meta["B5"] = "Generado por", ("vigilancia-tech-review (revisores de IA con "
                                               "contexto limpio; revisión humana "
                                               "requerida para nota oficial)")

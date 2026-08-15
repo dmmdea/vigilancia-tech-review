@@ -55,6 +55,12 @@ flowchart LR
   submission handling with evidence carry-forward, and cross-student same-tool date
   reconciliation.
 - **Everything teacher-facing ships in Spanish** — the class runs in Spanish.
+- **Row states beyond graded:** `REVISADO (ANEXO)` (file read inside the
+  student's integral review), `REEMPLAZADA` (older version/duplicate) — plus
+  advisory columns `Indicio IA (1-5)` (unfiltered-AI signal, never part of the
+  grade) and a per-student `Feedback sugerido` draft. A `Clave` column (stable
+  Canvas student id) keys the multi-round `Histórico`, immune to display-name
+  drift between rounds.
 
 ## Harness-agnostic by design
 
@@ -84,6 +90,7 @@ Harnesses without native PDF-page vision use the bundled rasterizer
 | `scripts/validate_review.py` | The mechanical fairness gate (single source of truth) |
 | `scripts/assemble_results.py` | Two-pass merge + same-tool reconciliation |
 | `scripts/convert_to_pdf.py` · `make_excel.py` | Slides→PDF · final ranked Excel |
+| `scripts/merge_rounds.py` | Multi-round master workbook — per-round sheets + cross-round `Histórico`; prior rounds are never deleted |
 | `templates/` | Reviewer prompts (Spanish): single-deck + multi-format bundle |
 | `references/` | Platform adapters |
 | `docs/specs/` | Design/run plans |
