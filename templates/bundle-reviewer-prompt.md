@@ -80,6 +80,16 @@ del fabricante, changelog, prensa confiable). Reglas:
 - `verification_confidence`: "alta" (anuncio oficial con fecha), "media" (prensa/fuentes
   secundarias consistentes), "baja" (no concluyente o contradictorio).
 - Si la herramienta tiene versiones/funciones, cuenta la fecha de LO QUE EL ESTUDIANTE USÓ.
+- **LA FUNCIONALIDAD DEMOSTRADA MANDA (regla dura, causa real de un error
+  grave):** identifica QUÉ capacidad ejercita de verdad la PoV y fecha ESA
+  capacidad. Si el estudiante etiqueta una versión nueva (p. ej. "X 3.5")
+  pero lo demostrado ya existía en una versión/función anterior, la fecha que
+  gobierna `verified_launch_date` y `age_months` es la de la capacidad
+  ANTERIOR — un rebranding o número de versión nuevo NO rejuvenece una
+  función vieja. En ese caso agrega DISCREPANCIA FECHA y explica ambas fechas
+  en `evidence_notes`. PROHIBIDO dejar la fecha más vieja solo como nota
+  mientras `age_months` se calcula con la etiqueta nueva: eso desactiva el
+  filtro de exclusión exactamente cuando más importa.
 - `age_months` = meses (un decimal) entre la fecha verificada y {{run_date}}.
   Con confianza "alta" o "media", `age_months` DEBE ser un número (se valida
   mecánicamente). Con confianza "baja" deja `age_months` en `null` y explica en

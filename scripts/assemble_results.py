@@ -93,6 +93,11 @@ def main():
             folder_desc = a.split("=", 1)[1]
 
     plan = load(work, "review_plan.json")
+    # optional: adversarial date re-verification verdicts (R19). Shape:
+    # {"checks": [{"row_id", "verdict", "older_date", "older_evidence_url",
+    #              "older_capability", "notes"}]}
+    date_checks = (load(work, "date_checks.json", required=False)
+                   or {}).get("checks", [])
     bundles = (load(work, "bundles.json", required=False) or {}).get("bundles", [])
     deck_pass = (load(work, "deck_reviews.json", required=False) or {}).get("reviewed", [])
     bundle_pass = (load(work, "bundle_reviews.json", required=False) or {}).get("reviewed", [])
@@ -408,6 +413,42 @@ def main():
                         " | AVISO: la entrega que la reemplaza NO quedó "
                         "calificada en esta corrida — revisar ESTA versión "
                         "manualmente.")
+
+    # ---- R19: apply adversarial date-check verdicts as FLAGS --------------
+    # The checker can prove a capability is older than the accepted date; the
+    # pipeline surfaces that loudly but never silently re-grades or DQs —
+    # humans decide (same never-edit-verdicts rule as everywhere else).
+    checks_by_id = {c.get("row_id"): c for c in date_checks}
+    n_older = 0
+    for row in results:
+        c = checks_by_id.get(row.get("id"))
+        if not c:
+            continue
+        v = c.get("verdict")
+        if v == "mas_vieja":
+            n_older += 1
+            for fl in ("VERIFICAR FECHA", "DISCREPANCIA FECHA",
+                       "REVISAR MANUALMENTE"):
+                if fl not in row["flags"]:
+                    row["flags"].append(fl)
+            extra = (f"VERIFICACIÓN ADVERSARIAL DE FECHA: la capacidad "
+                     f"demostrada ya existía desde {c.get('older_date', '?')} "
+                     f"({c.get('older_capability', '')}) — evidencia: "
+                     f"{c.get('older_evidence_url', '')}. La fila puede estar "
+                     "por FUERA de la ventana de 4 meses; decisión humana "
+                     "requerida.")
+            key = "evidence_notes" if row["status"] == "revisado" else "status_reason"
+            row[key] = ((row.get(key) or "") + " | " + extra).strip(" |")
+        elif v == "no_concluyente":
+            if "VERIFICAR FECHA" not in row["flags"]:
+                row["flags"].append("VERIFICAR FECHA")
+            key = "evidence_notes" if row["status"] == "revisado" else "status_reason"
+            row[key] = ((row.get(key) or "") + " | Verificación adversarial "
+                        "de fecha NO concluyente: "
+                        + (c.get("notes") or "")).strip(" |")
+    if date_checks:
+        print(f"date_checks aplicados: {len(checks_by_id)} "
+              f"({n_older} con evidencia de fecha más vieja)")
 
     # ---- same-tool cross-student reconciliation ---------------------------
     groups = {}

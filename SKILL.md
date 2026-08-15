@@ -241,6 +241,23 @@ normalization (defense in depth) and runs **same-tool reconciliation**: students
 verified dates for the same tool differ by >1 month all get `VERIFICAR FECHA` — the
 reviewers verified independently, so this is where disagreement becomes visible.
 
+### 5bis. Adversarial date re-verification — top candidates NEVER ship unchecked
+
+The pilot shipped a top-5 row whose demonstrated capability was 5.7 months old:
+the reviewer NOTED the older date but anchored `age_months` to the new version
+label, and nothing re-checked the top. Now mandatory before the Excel:
+
+For **every top-8 candidate**, every row with `age_months` in 2.5–4.5, and
+every row whose notes mention an earlier version/feature: dispatch one
+fresh-context checker per row with `templates/date-check-prompt.md`
+(refutation framing — its job is to prove the capability is OLDER). Collect
+verdicts into `$WORK/date_checks.json`
+(`{"checks": [{"row_id", "verdict", "older_date", "older_evidence_url",
+"older_capability", "notes"}]}`) and re-run `assemble_results.py` — verdicts
+become loud flags (`VERIFICAR FECHA` + `DISCREPANCIA FECHA` +
+`REVISAR MANUALMENTE` with the evidence URL); the pipeline never silently
+re-grades or disqualifies. A top-5 that survives this pass has earned it.
+
 ### 6. Generate the Excel
 
 ```bash
@@ -256,11 +273,19 @@ final grade (single source of truth: 0.50/0.25/0.25, DQ → 1.0) and fails (exit
 naming any listed entry with no row. Fix the missing rows; never work around the gate.
 Sheets: **Ranking**, **Detalle**, **Meta**.
 
-### 7. Deliver
+### 7. Deliver — multi-round master, history is sacred
 
-Copy the Excel to the delivery folder the user confirmed (a local Drive-synced path —
-it syncs on its own). Replace the previous run's file if one is there; never leave two
-versions side by side.
+The course runs weekly rounds. Delivery goes through the MASTER workbook:
+
+```bash
+python "$SKILL_DIR/scripts/merge_rounds.py" "<delivery>/Resultados-Vigilancia-Tecnologica-MAESTRO.xlsx" "$WORK/res.xlsx" --round="Semana N"
+```
+
+Adds this round as its own sheet trio (`Ranking - Semana N`, `Detalle - …`,
+`Meta - …`) and rebuilds the `Histórico` sheet (final grade per student per
+round). Re-delivering the SAME round replaces only that round's sheets;
+**sheets of other rounds are never touched or deleted.** The master lives in
+the Drive-synced delivery folder the user confirmed.
 
 ### 8. Report
 
