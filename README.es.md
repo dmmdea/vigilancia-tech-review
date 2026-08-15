@@ -58,7 +58,9 @@ flowchart LR
 - **Estados más allá de calificado:** `REVISADO (ANEXO)` (archivo leído dentro
   de la revisión integral del estudiante), `REEMPLAZADA` (versión anterior o
   duplicado) — más columnas advisory `Indicio IA (1-5)` (señal de IA sin
-  filtrar, nunca parte de la nota) y `Feedback sugerido` por estudiante.
+  filtrar, nunca parte de la nota) y `Feedback sugerido` por estudiante. La
+  columna `Clave` (id Canvas estable del estudiante) ancla el `Histórico`
+  multi-ronda, inmune a variaciones del nombre visible entre rondas.
 
 ## Agnóstico al harness por diseño
 

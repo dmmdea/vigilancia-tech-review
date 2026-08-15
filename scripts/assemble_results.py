@@ -316,7 +316,7 @@ def main():
                 if nn:
                     note += " | AVISOS DEL INVENTARIO: " + nn
                 graded(primary, r, flags, note, e["student_name"],
-                       canvas_key=e.get("canvas_key") or e["folder_id"])
+                       canvas_key=e.get("canvas_key") or "")
             # "SÍ fue leído" may only be asserted for files the bundle
             # actually LISTED — anything else is a false certification that
             # suppresses the human follow-up (finding 4, 2026-08-15 review).
@@ -361,7 +361,7 @@ def main():
                     note = ((note + " | ") if note else "") +                         "AVISOS DEL INVENTARIO: " + nn
                 graded(e["deck"], deck["result"], flags, note,
                        e["student_name"],
-                       canvas_key=e.get("canvas_key") or e["folder_id"])
+                       canvas_key=e.get("canvas_key") or "")
             for fr in e.get("deck_source_of", []):
                 no_rev(fr, "archivo fuente (mismo contenido) de la "
                            f"presentación ya revisada '{e['deck']['name']}' — "
@@ -403,22 +403,40 @@ def main():
 
     graded_ids = {row["id"] for row in results if row["status"] == "revisado"}
 
-    # in-folder version supersedes: if THIS folder produced no graded row,
-    # its REEMPLAZADA rows certify a grade that doesn't exist (round-3
-    # reviewer finding — sibling path of the cross-folder F2 fix)
+    # in-folder version supersedes: a REEMPLAZADA row certifies that ITS
+    # winner got graded — per FAMILY, not per folder: a folder can hold
+    # several version families (Deck v1/final + Anexo v1/final) and only
+    # the deck family's winner is ever graded, so "any graded row in the
+    # folder" falsely certified the annex family (convergence finding 7).
+    def _stem(n):
+        return os.path.splitext(n)[0].strip().lower()
+
     for e in plan["folders"]:
         if not e.get("superseded_files"):
             continue
-        if folder_file_ids(e) & graded_ids:
-            continue
-        own = {fr["id"] for fr in e["superseded_files"]}
+        ids_by_stem = {}
+        all_files = ([e["deck"]] if e.get("deck") else [])
+        for key in ("deck_source_of", "evidence", "no_deck_files",
+                    "superseded_files"):
+            all_files += e.get(key) or []
+        for fr in all_files:
+            ids_by_stem.setdefault(_stem(fr["name"]), set()).add(fr["id"])
+        winner_of = {fr["id"]: fr.get("superseded_by_file")
+                     for fr in e["superseded_files"]}
         for row in results:
-            if row["status"] == "reemplazada" and row["id"] in own:
-                if "REVISAR MANUALMENTE" not in row["flags"]:
-                    row["flags"].append("REVISAR MANUALMENTE")
-                row["status_reason"] += (
-                    " | AVISO: la versión más reciente NO quedó calificada "
-                    "en esta corrida — revisar ESTA versión manualmente.")
+            if row["status"] != "reemplazada" or row["id"] not in winner_of:
+                continue
+            winner = winner_of[row["id"]]
+            winner_ids = ids_by_stem.get(_stem(winner), set()) if winner \
+                else set()
+            if winner_ids & graded_ids:
+                continue
+            if "REVISAR MANUALMENTE" not in row["flags"]:
+                row["flags"].append("REVISAR MANUALMENTE")
+            row["status_reason"] += (
+                " | AVISO: la versión más reciente de ESTE documento NO "
+                "quedó calificada en esta corrida — revisar ESTA versión "
+                "manualmente.")
 
     for e in plan["folders"]:
         target = e.get("superseded_by_id")
@@ -480,12 +498,12 @@ def main():
                 continue
         checks_by_id[rid] = c
     n_older = 0
-    n_applied = 0
-    for row in results:
+    applied_ids = set()   # count CHECKS applied, not rows — two rows sharing
+    for row in results:   # an id must not double-count (convergence minor)
         c = checks_by_id.get(row.get("id"))
         if not c:
             continue
-        n_applied += 1
+        applied_ids.add(row["id"])
         v = c.get("verdict")
         if v == "mas_vieja":
             n_older += 1
@@ -509,7 +527,7 @@ def main():
                         "de fecha NO concluyente: "
                         + (c.get("notes") or "")).strip(" |")
     if date_checks:
-        print(f"date_checks: {len(date_checks)} recibidos, {n_applied} "
+        print(f"date_checks: {len(date_checks)} recibidos, {len(applied_ids)} "
               f"aplicados ({n_older} con evidencia de fecha más vieja)")
 
     # ---- same-tool cross-student reconciliation ---------------------------

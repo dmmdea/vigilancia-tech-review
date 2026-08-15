@@ -58,7 +58,9 @@ flowchart LR
 - **Row states beyond graded:** `REVISADO (ANEXO)` (file read inside the
   student's integral review), `REEMPLAZADA` (older version/duplicate) — plus
   advisory columns `Indicio IA (1-5)` (unfiltered-AI signal, never part of the
-  grade) and a per-student `Feedback sugerido` draft.
+  grade) and a per-student `Feedback sugerido` draft. A `Clave` column (stable
+  Canvas student id) keys the multi-round `Histórico`, immune to display-name
+  drift between rounds.
 
 ## Harness-agnostic by design
 

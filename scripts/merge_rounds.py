@@ -68,14 +68,30 @@ def sheet_title(kind, rnd):
     if len(base) <= 31:
         return base
     h = hashlib.sha256(rnd.encode("utf-8")).hexdigest()[:4]
-    keep = 31 - len(kind) - 3 - 5          # "kind - " + "~hash"
+    keep = max(31 - len(kind) - 3 - 5, 1)  # "kind - " + "~hash"; never <=0
     return f"{kind} - {rnd[:keep]}~{h}"
 
 
 def load_registry(wb):
-    """[(round_full_name, {kind: title})] in arrival order."""
+    """[(round_full_name, {kind: title})] in arrival order.
+
+    A master written before the registry existed has no _Rondas sheet but
+    DOES have per-round sheets — backfill from the 'Ranking - <ronda>'
+    titles so the first post-upgrade merge doesn't rebuild a Histórico
+    that silently drops every prior round (convergence finding 2)."""
     if REGISTRY not in wb.sheetnames:
-        return []
+        out = []
+        for title in wb.sheetnames:
+            if title.startswith("Ranking - "):
+                rnd = title[len("Ranking - "):]
+                titles = {k: f"{k} - {rnd}" for k in KINDS
+                          if f"{k} - {rnd}" in wb.sheetnames}
+                out.append((rnd, titles))
+        if out:
+            print(f"AVISO: maestro sin hoja de registro '{REGISTRY}' — "
+                  f"{len(out)} ronda(s) reconstruida(s) desde los títulos "
+                  "de hoja existentes.", file=sys.stderr)
+        return out
     out = []
     for row in wb[REGISTRY].iter_rows(min_row=2, values_only=True):
         if row and row[0]:
@@ -120,9 +136,16 @@ def rebuild_historico(wb, registry):
     rounds = [name for name, _t in registry]
     data = {}          # key -> {"name": display, "grades": {round: final}}
     order = []
+    keyed, name_keyed = [], []
     for name, titles in registry:
         t = titles.get("Ranking")
         if not t or t not in wb.sheetnames:
+            # a REGISTERED round whose sheet is gone is registry/workbook
+            # divergence, not "no data" — its Histórico column will be
+            # blank; say so instead of silently succeeding (finding 4)
+            print(f"AVISO: la ronda registrada '{name}' no tiene su hoja "
+                  f"'{t}' en el maestro (¿renombrada o borrada a mano?) — "
+                  "su columna del Histórico quedará vacía.", file=sys.stderr)
             continue
         ws = wb[t]
         hdr = [c.value for c in ws[1]]
@@ -133,6 +156,7 @@ def rebuild_historico(wb, registry):
         except ValueError:
             continue
         i_key = hdr.index("Clave") if "Clave" in hdr else None
+        (keyed if i_key is not None else name_keyed).append(name)
         for row in ws.iter_rows(min_row=2, values_only=True):
             if row[i_st] != "REVISADO":
                 continue
@@ -146,6 +170,14 @@ def rebuild_historico(wb, registry):
             data[key]["grades"][name] = row[i_fin]
             if est:
                 data[key]["name"] = est     # latest round's display name wins
+    if keyed and name_keyed:
+        # mixed keying splits every student whose Clave-keyed and name-keyed
+        # rows don't coincide — visible only here, so warn here (finding 5)
+        print("AVISO: el Histórico mezcla rondas CON columna 'Clave' "
+              f"({', '.join(keyed)}) y SIN ella ({', '.join(name_keyed)}) — "
+              "un mismo estudiante puede aparecer partido en dos filas. "
+              "Regenera las rondas viejas con el make_excel actual para "
+              "unificar.", file=sys.stderr)
     ws = wb.create_sheet("Histórico", 0)
     hdr = ["Estudiante"] + [f"Nota {r}" for r in rounds]
     for j, h in enumerate(hdr, 1):
@@ -181,6 +213,12 @@ def main():
               "permitidos en títulos de hoja de Excel (\\ / ? * [ ] :) — "
               "usa otro nombre.", file=sys.stderr)
         sys.exit(1)
+    if rnd.startswith("'") or rnd.endswith("'"):
+        # Excel also forbids sheet titles that begin/end with an apostrophe
+        print(f"ERROR: el nombre de ronda '{rnd}' no puede empezar ni "
+              "terminar con apóstrofo (regla de Excel para títulos de "
+              "hoja).", file=sys.stderr)
+        sys.exit(1)
     master_path, round_path = args
 
     try:
@@ -215,11 +253,14 @@ def main():
     titles = {k: sheet_title(k, rnd) for k in KINDS}
 
     # refuse to touch a title that the registry attributes to ANOTHER round —
-    # deleting it would destroy that round's history
+    # deleting it would destroy that round's history. Excel sheet titles are
+    # CASE-INSENSITIVE-unique (openpyxl silently renames on collision), so
+    # every comparison here must casefold (convergence finding 3).
+    ours_cf = {t.casefold() for t in titles.values()}
     for other_name, other_titles in registry:
         if other_name == rnd:
             continue
-        clash = set(titles.values()) & set(other_titles.values())
+        clash = ours_cf & {t.casefold() for t in other_titles.values()}
         if clash:
             print(f"ERROR: el título de hoja {sorted(clash)} ya pertenece a "
                   f"la ronda '{other_name}' — nombres de ronda demasiado "
@@ -230,9 +271,17 @@ def main():
     replaced = any(name == rnd for name, _t in registry)
     for kind in KINDS:
         t = titles[kind]
-        if t in wb.sheetnames:
-            del wb[t]
-        copy_sheet(src[kind], wb, t)
+        for existing in list(wb.sheetnames):
+            if existing.casefold() == t.casefold():
+                del wb[existing]
+        ws = copy_sheet(src[kind], wb, t)
+        if ws.title != t:
+            # openpyxl renamed the sheet — the registry would point at a
+            # title that doesn't exist and the round would silently vanish
+            print(f"ERROR: openpyxl renombró la hoja '{t}' a '{ws.title}' "
+                  "(colisión de títulos no detectada) — abortando sin "
+                  "guardar.", file=sys.stderr)
+            sys.exit(2)
 
     if replaced:
         registry = [(n, titles if n == rnd else t) for n, t in registry]
@@ -242,11 +291,18 @@ def main():
 
     n_students, rounds = rebuild_historico(wb, registry)
 
+    # never truncate the irreplaceable master in place: stage next to it,
+    # then atomically swap (os.replace) so a crash mid-write leaves the
+    # previous master intact
     tmp = tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False)
     tmp.close()
-    wb.save(tmp.name)
-    shutil.copyfile(tmp.name, longpath(master_path))
-    os.unlink(tmp.name)
+    try:
+        wb.save(tmp.name)
+        staged = longpath(master_path + ".tmp~")
+        shutil.copyfile(tmp.name, staged)
+        os.replace(staged, longpath(master_path))
+    finally:
+        os.unlink(tmp.name)
     print(f"OK maestro '{os.path.basename(master_path)}': ronda '{rnd}' "
           f"{'reemplazada' if replaced else 'agregada'} · rondas presentes: "
           f"{rounds} · estudiantes en Histórico: {n_students}")

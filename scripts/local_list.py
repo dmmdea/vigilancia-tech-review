@@ -98,8 +98,8 @@ def getsize(p):
 VERSION_MARK = re.compile(
     r"(?:^|[\s_\-.(])("
     r"v(?:ersi[oó]n)?\s*(\d+)"
-    r"|(?:versi[oó]n|entrega)\s+(?:final|nueva|[uú]ltima|definitiva)"
-    r"|(?:[uú]ltima|nueva)\s+(?:versi[oó]n|entrega)"
+    r"|(?:versi[oó]n|entrega)[\s_\-.]+(?:final|nueva|[uú]ltima|definitiva)"
+    r"|(?:[uú]ltima|nueva)[\s_\-.]+(?:versi[oó]n|entrega)"
     r"|final(?:isim[ao])?|definitiv[ao]|corregid[ao]"
     r"|\((\d+)\))(?:[\s_\-.)]|$)",
     re.IGNORECASE)
@@ -231,9 +231,13 @@ def main():
                            "entries": sub_entries}, f,
                           ensure_ascii=False, indent=2)
             m = CANVAS_RE.match(name)
+            # Clave estable = SOLO la mitad del estudiante: la carpeta Canvas
+            # es "<studentId>-<assignmentId> - ..." y el assignmentId cambia
+            # en cada ronda (verificado: las 76 carpetas de S2 comparten el
+            # mismo 462354) — incluirlo partiría el Histórico cada semana.
             manifest["students"].append({
                 "folder_name": name, "folder_id": fid,
-                "canvas_key": m.group(1) if m else None,
+                "canvas_key": m.group(1).split("-")[0] if m else None,
                 "student_name": m.group(2) if m else name,
                 "timestamp": m.group(3) if m else "",
                 "collect_notes": folder_notes,
