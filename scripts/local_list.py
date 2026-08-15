@@ -311,8 +311,7 @@ def main():
                      superseded_by_id=by_folder[auth]["folder_id"],
                      no_deck_reason=("entrega duplicada del mismo estudiante — "
                                      "reemplazada por un envío posterior en la "
-                                     f"carpeta '{auth}'; se revisó "
-                                     "esa versión."))
+                                     f"carpeta '{auth}'."))
             plan["folders"].append(e)
             continue
 
@@ -340,8 +339,23 @@ def main():
             for fr in group:
                 stems.setdefault(os.path.splitext(fr["name"])[0].strip(),
                                  []).append(fr)
-            marked = any(version_rank(st) is not None for st in stems)
-            if len(stems) >= 2 and marked:
+            ranks = {st: version_rank(st) for st in stems}
+            marked_stems = [st for st, vr in ranks.items() if vr is not None]
+            unmarked = [st for st, vr in ranks.items() if vr is None]
+            has_final_kw = any(vr and vr[0] == 2 for vr in ranks.values())
+            # unambiguous version relation: everything is marked, OR the
+            # marked side includes a final-class keyword that outranks the
+            # plain name. Unmarked + numbered-only (Deck + Deck v1) is
+            # AMBIGUOUS — the plain file is often the real final export;
+            # never supersede on ambiguity, a human decides.
+            unambiguous = (len(stems) >= 2 and marked_stems
+                           and (not unmarked or has_final_kw))
+            if len(stems) >= 2 and marked_stems and not unambiguous:
+                e["notes"].append(
+                    "POSIBLES VERSIONES EN LA MISMA CARPETA (ambiguo: archivo "
+                    f"sin marcador junto a versión numerada: {sorted(stems)}) "
+                    "— NO se descartó ninguna; confirmar cuál es la final.")
+            if unambiguous:
                 def skey(item):
                     st, frs = item
                     vr = version_rank(st)

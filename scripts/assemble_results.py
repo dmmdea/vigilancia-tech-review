@@ -169,6 +169,22 @@ def main():
         row["evidence_notes"] = notes
         results.append(row)
 
+    def notes_annotations(e):
+        """Map plan-level warnings onto the graded row: flags + note text.
+        (Hunter finding B: stderr NOTEs never reached the Excel, so the
+        deliverable asserted confidence the pipeline had disclaimed.)"""
+        flags, texts = [], []
+        for n in e.get("notes") or []:
+            texts.append(n)
+            up = n.upper()
+            if "POSIBLE ENTREGA DUPLICADA" in up:
+                flags.append("ENTREGA DUPLICADA")
+            if ("ORDEN DE ENTREGAS INCIERTO" in up or "VERSIONES" in up
+                    or "MULTIPLES ARCHIVOS" in up or "SUBCARPETA" in up
+                    or "AMBIGUO" in up):
+                flags.append("REVISAR MANUALMENTE")
+        return flags, (" | ".join(texts) if texts else None)
+
     def spotcheck_annotations(item):
         """1-page submissions cannot cite 'slide N' — a citation-rule
         rejection there is not evidence of fabrication."""
@@ -200,7 +216,8 @@ def main():
         files = ([e["deck"]] + e.get("deck_source_of", []) + e.get("evidence", [])
                  if is_review else list(e.get("no_deck_files", [])))
         superseded = (not is_review
-                      and "duplicada" in e.get("no_deck_reason", ""))
+                      and bool(e.get("superseded_by_id")
+                               or "duplicada" in e.get("no_deck_reason", "")))
 
         if superseded:
             carried_labels = {lbl for _t, lbl in carried_from.get(fid, [])}
@@ -286,6 +303,10 @@ def main():
                 flags += sf
                 if sn:
                     note += " | " + sn
+                nf, nn = notes_annotations(e)
+                flags += nf
+                if nn:
+                    note += " | AVISOS DEL INVENTARIO: " + nn
                 graded(primary, r, flags, note, e["student_name"])
             # "SÍ fue leído" may only be asserted for files the bundle
             # actually LISTED — anything else is a false certification that
@@ -325,6 +346,10 @@ def main():
                        student=e["student_name"])
             else:
                 flags, note = spotcheck_annotations(deck)
+                nf, nn = notes_annotations(e)
+                flags = list(flags) + nf
+                if nn:
+                    note = ((note + " | ") if note else "") +                         "AVISOS DEL INVENTARIO: " + nn
                 graded(e["deck"], deck["result"], flags, note,
                        e["student_name"])
             for fr in e.get("deck_source_of", []):
@@ -350,6 +375,39 @@ def main():
         for fr in files:
             no_rev(fr, "no se pudo revisar (sin resultado de ninguna pasada).",
                    ["REVISAR MANUALMENTE"], student=e["student_name"])
+
+    # ---- REEMPLAZADA cross-check: the replacement must actually be graded.
+    # (Hunter finding F2: a row must never certify "la nota está en esa fila"
+    # when the replacing submission produced no grade — e.g. the student's
+    # newer Canvas folder was empty.)
+    plan_by_fid = {e["folder_id"]: e for e in plan["folders"]}
+
+    def folder_file_ids(e):
+        ids = set()
+        if e.get("deck"):
+            ids.add(e["deck"]["id"])
+        for key in ("deck_source_of", "evidence", "no_deck_files",
+                    "superseded_files"):
+            ids |= {fr["id"] for fr in e.get(key) or []}
+        return ids
+
+    graded_ids = {row["id"] for row in results if row["status"] == "revisado"}
+    for e in plan["folders"]:
+        target = e.get("superseded_by_id")
+        if not target:
+            continue
+        te = plan_by_fid.get(target)
+        target_graded = bool(te and (folder_file_ids(te) & graded_ids))
+        if not target_graded:
+            own_ids = folder_file_ids(e)
+            for row in results:
+                if row["status"] == "reemplazada" and row["id"] in own_ids:
+                    if "REVISAR MANUALMENTE" not in row["flags"]:
+                        row["flags"].append("REVISAR MANUALMENTE")
+                    row["status_reason"] += (
+                        " | AVISO: la entrega que la reemplaza NO quedó "
+                        "calificada en esta corrida — revisar ESTA versión "
+                        "manualmente.")
 
     # ---- same-tool cross-student reconciliation ---------------------------
     groups = {}
