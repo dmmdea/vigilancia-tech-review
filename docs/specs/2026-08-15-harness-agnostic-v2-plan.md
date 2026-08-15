@@ -124,3 +124,15 @@ de cerrar lo pendiente (test Antigravity + ship de feat/live-harness-validation)
 Nota: la re-entrega del Excel S2 con los nuevos estados queda CANCELADA por
 instrucción de Daniel ("no modificar el ranking ya entregado") — S2 entra al
 maestro histórico tal cual en la próxima entrega.
+
+## Estado (2026-08-15, rama feat/class1-feedback)
+
+R15-R18: implementados (commit b54d398) + fixes de la ronda de cazadores.
+R19-R20: implementados (commit e6bedab) — templates endurecidos +
+date-check-prompt.md + paso 5bis en SKILL.md; merge_rounds.py + entrega
+round-aware en SKILL.md paso 7.
+Revisión consolidada: 6 hallazgos (2 críticos: colisión de títulos a 31
+chars que BORRABA rondas; Histórico partido por nombres libres) — TODOS
+corregidos con red/green ejecutado (commit 5cff626). semgrep limpio.
+Regresión del piloto: 95 filas, 0 no_revisado. Ronda de convergencia
+despachada sobre 5cff626; ship al quedar NOTHING NEW.
