@@ -125,7 +125,7 @@ def main():
         sys.exit(1)
     base, outdir = sys.argv[1], sys.argv[2]
     if not isdir(base):
-        print(f"ERROR: not a folder: {base}", file=sys.stderr)
+        print(f"ERROR: no es una carpeta: {base}", file=sys.stderr)
         sys.exit(2)
     os.makedirs(longpath(outdir), exist_ok=True)
     sub_dir = os.path.join(outdir, "sub-listings")
@@ -189,7 +189,7 @@ def main():
         dup = {}
 
     if not manifest["students"]:
-        print("ERROR: no submissions found.", file=sys.stderr)
+        print("ERROR: no se encontraron entregas.", file=sys.stderr)
         sys.exit(3)
 
     by_folder = {s["folder_name"]: s for s in manifest["students"]}

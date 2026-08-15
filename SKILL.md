@@ -1,6 +1,6 @@
 ---
 name: vigilancia-tech-review
-description: Use when the teaching team needs to review, score, and rank MBA "Vigilancia Tecnológica" student presentations — from a link-shared Google Drive folder OR a local/Drive-Desktop folder of Canvas submissions. Reads EVERY submitted file whatever its format (pptx, pdf, docx, html, png, mp4, xlsx, zip) with one Sonnet reviewer per student, web-verifies each tool's launch date, disqualifies tools older than 4 months, scores PoC/Impacto/Comunicación (1.0–5.0, weighted 50/25/25), and produces a two-sheet Excel ranking with the top-5 candidates for human TA review. Triggers: "revisar presentaciones vigilancia tecnológica", "calificar las ppt de los estudiantes", "ranking vigilancia tecnológica", "escoger las mejores presentaciones".
+description: Use when the teaching team needs to review, score, and rank MBA "Vigilancia Tecnológica" student presentations — from a link-shared Google Drive folder OR a local/Drive-Desktop folder of Canvas submissions. Reads EVERY submitted file whatever its format (pptx, pdf, docx, html, png, mp4, xlsx, zip) with one fresh-context AI reviewer per student, web-verifies each tool's launch date, disqualifies tools older than 4 months, scores PoC/Impacto/Comunicación (1.0–5.0, weighted 50/25/25), and produces a two-sheet Excel ranking with the top-5 candidates for human TA review. Harness-agnostic — adapters for Claude Code, Codex (GPT), and Antigravity (Gemini) in references/. Triggers: "revisar presentaciones vigilancia tecnológica", "calificar las ppt de los estudiantes", "ranking vigilancia tecnológica", "escoger las mejores presentaciones".
 ---
 
 # vigilancia-tech-review
@@ -25,23 +25,52 @@ The only legitimate NO REVISADO reasons are: a genuinely unreadable/corrupt file
 superseded duplicate submission, or a file that was read as supplementary evidence
 inside another row's review (say so explicitly in the reason).
 
-## Requirements
+## LANGUAGE RULE — the class runs in Spanish
 
-- Python 3.10+ with `openpyxl` and `pypdf` (`pip install openpyxl pypdf`).
-- Slides→PDF: LibreOffice (`soffice`) **or** Microsoft PowerPoint (Windows COM).
-- Optional but strongly recommended for full format coverage:
-  - Microsoft Word (COM) or LibreOffice → `.docx` (best fidelity: keeps embedded
-    screenshots, which are usually the student's PoC evidence)
-  - Chrome/Edge (headless) → `.html`
-  - `ffmpeg` → video keyframes
-  - a local/whisper STT for video audio (optional; frames alone still work)
-- For a Drive source: folder shared as **"anyone with the link"**. No credentials.
+Every artifact a teacher or student may see leaves this skill **in Spanish**: the Excel
+(headers, flags, status reasons, notes), the reviewer justifications, and the run
+summary you give the teaching team. Reviewer prompt templates are Spanish and stay
+Spanish. Inputs arrive in Spanish too — filenames with accents/ñ, Canvas timestamps
+with Spanish month names — and the bundled scripts already parse them; never "sanitize"
+Spanish out of names. (Talking to the operator about the run follows the operator's
+language; the deliverables themselves are Spanish.)
+
+## Capability requirements (harness-agnostic)
+
+This skill assumes an agentic harness that can:
+
+1. **See images** (its file/image tool renders PNG/JPG visually).
+2. **Read PDF pages visually** — natively (Claude Code's Read), or via the bundled
+   rasterizer `scripts/pdf_to_images.py` (PyMuPDF) that turns each page into a PNG.
+3. **Search the web** — for launch-date verification. If the session has no web
+   search, every review runs with `verification_confidence: "baja"` (never DQ) and
+   the operator is told dates were not verified.
+4. **Run Python 3.10+** with `openpyxl` + `pypdf` (plus `pymupdf` when rasterizing).
+5. **Dispatch fresh-context sub-reviewers** — one per student, a mid-tier
+   vision-capable model. A harness with no subagents reviews **sequentially in its
+   own loop**, dropping/summarizing the previous student's pages between students so
+   grading stays independent.
+6. **Drive conversion backends**: slides→PDF (LibreOffice or PowerPoint COM),
+   docx→PDF (Word COM or LibreOffice), html→PDF (headless Chrome/Edge), video
+   keyframes (ffmpeg). `prepare_materials.py` autodetects what is installed.
+
+**Platform adapters** — read yours before dispatching anything:
+
+| Harness | Adapter |
+|---|---|
+| Claude Code (Claude) | `references/claude-code.md` |
+| Codex CLI (GPT) | `references/codex.md` |
+| Antigravity (Gemini) | `references/antigravity.md` |
+| Anything else | follow the capability list above; the adapters show the shape |
+
+For a Drive source: folder shared as **"anyone with the link"**. No credentials.
 
 ## Inputs to collect from the user
 
 1. **Where the submissions are** — a Drive folder URL, or a local path (Google Drive
    Desktop mount / unzipped Canvas bulk download). Ask if not given.
-2. Optional: a local Drive-synced path to drop the Excel into so it auto-syncs.
+2. **Where to deliver the Excel** — a local Drive-synced folder path. Confirm it once;
+   deliveries go there every run afterwards.
 
 ## Procedure
 
@@ -49,7 +78,7 @@ inside another row's review (say so explicitly in the reason).
 `RUN_DATE` = today (YYYY-MM-DD). Student files stay out of any git repo.
 
 > **Windows MAX_PATH — read before anything else.** Student folder names plus filenames
-> routinely exceed 260 chars, and Python here does NOT auto-apply the `\\?\` prefix:
+> routinely exceed 260 chars, and Python does NOT auto-apply the `\\?\` prefix:
 > file I/O then fails *silently per-file*, which looks exactly like "the student didn't
 > submit". The bundled scripts already handle this. If you write your own helper, use
 > the same `longpath()` treatment, and keep every generated path SHORT — put converted
@@ -67,8 +96,8 @@ python "$SKILL_DIR/scripts/local_list.py" "<folder>" "$WORK"
 Auto-detects NESTED (one subfolder per student, Canvas naming) vs FLAT. Writes
 `listing.json`, `sub-listings/*.json`, `manifest.json`, and `review_plan.json`
 (primary submission + supplementary evidence + superseded duplicates per student).
-Exit 2 = folder unreadable · 3 = nothing found. Review any `NOTE ...` lines it prints
-on stderr — those are ambiguous primary-file picks a human should confirm.
+Exit 2 = folder unreadable · 3 = nothing found. Review any `NOTE ...` lines on
+stderr — those are ambiguous primary-file picks a human should confirm.
 
 **Link-shared Drive folder:**
 
@@ -95,19 +124,18 @@ no download form" failures = throttling, stop too.
 python "$SKILL_DIR/scripts/prepare_materials.py" "$WORK" [--matroot=<short dir>]
 ```
 
-Renders each submitted file into something a reviewer can actually consume, converting
-ONLY where the Read tool cannot open the format (Read already renders PDFs and images
-visually — never "convert" a PNG):
+Renders each submitted file into something a reviewer can consume, converting ONLY
+where the harness's file tool cannot open the format (never "convert" a PNG):
 
 | Submitted | Becomes | Why |
 |---|---|---|
-| `.pdf` | as-is | vision |
-| `.pptx .ppt .odp` | PDF | Read can't open slides |
+| `.pdf` | as-is | vision (rasterize per adapter if needed) |
+| `.pptx .ppt .odp` | PDF | slide decks aren't readable directly |
 | `.docx .doc .rtf` | PDF (Word COM → LibreOffice) | keeps embedded screenshots = the PoC evidence |
 | `.html .htm` | PDF (headless Chrome) | keeps the rendering |
-| `.png .jpg …` | passthrough | Read shows images directly |
+| `.png .jpg …` | passthrough | vision reads images directly |
 | `.xlsx .xls .csv` | `.txt` cell dump | data reads better as data |
-| `.mp4 .mov …` | keyframes (+ transcript) | reviewer's own vision judges the frames |
+| `.mp4 .mov …` | keyframes (+ transcript) | the reviewer's own vision judges the frames |
 | `.zip` | extracted, contents re-routed | — |
 | `.py .txt .md` | passthrough | text |
 
@@ -117,84 +145,112 @@ Writes `materials.json`. It prints any video lacking a transcript; transcribe th
 Fix every `ERROR` item it reports before moving on — each one is a student at risk of
 losing credit for evidence they did submit.
 
-### 3. Dispatch one reviewer per student — Sonnet, parallel
-
-Use a Workflow (or the Agent tool in batches of ~4). Two templates:
-
-- `templates/reviewer-prompt.md` — a plain single-deck submission.
-- `templates/bundle-reviewer-prompt.md` — a student with **no slide deck** or with
-  **deck + supplementary evidence**. It lists every material with explicit per-item
-  reading instructions and requires the reviewer to report `materials_reviewed`.
-
-A student who has BOTH a deck and extra evidence must be reviewed with the bundle
-template — the evidence is usually the proof behind the PoC score, and a deck-only
-review silently under-grades them.
-
-**Fairness gate — validate every returned JSON:**
-- `pages_read == pages_total` (deck template) or `materials_reviewed` covers every
-  listed material (bundle template).
-- Scores within 1.0–5.0; justifications non-empty.
-- If `verification_confidence` is alta/media, `age_months` must be numeric — a null age
-  with confident verification silently disables the DQ filter.
-- Spot-check honesty on a sample: verify one cited slide against the actual page.
-  **A one-page submission cannot carry a "slide N" citation** — do not treat a missing
-  slide number there as fabrication; check whether the content matches instead.
-- On violation: re-dispatch that student ONCE with the specific problem. Still invalid →
-  `NO REVISADO`, reason "revisión incompleta", flag for humans.
-- Never edit a reviewer's scores. If a verdict looks off, add a flag — humans decide.
-
-### 4. Assemble results
-
-Build `$WORK/results.json`:
-
-```json
-{"run_date": "<RUN_DATE>", "folder_url": "<source>", "results": [ ... ]}
-```
-
-**One row per submitted FILE.** Within a student, exactly ONE row carries the grade
-(`"status": "revisado"`); the student's other files get `"status": "no_revisado"` with a
-reason that says they WERE read inside that student's review and points to the graded
-row. Every row needs `"id"` (the listing's file id) and `"file"` (the ORIGINAL filename —
-reviewers often echo a converted path). Do not compute final grades yourself.
-
-### 5. Generate the Excel
+**Harness without native PDF-page vision** (see your adapter): also run
 
 ```bash
-python "$SKILL_DIR/scripts/make_excel.py" "$WORK/results.json" \
-  "$WORK/Resultados-Vigilancia-Tecnologica-<RUN_DATE>.xlsx" \
-  --listing="$WORK/listing.json" --listing="$WORK/sub-listings/<id>.json" ...
+python "$SKILL_DIR/scripts/pdf_to_images.py" "<pdf>" "<outdir>"   # per PDF
 ```
 
-Pass EVERY listing JSON (main + each subfolder). Run it from inside `$WORK` with
-relative paths — 70+ absolute `--listing` args can blow the command-length limit —
-and write to a SHORT output name (e.g. `res.xlsx`), then copy it to the final
-`Resultados-…-<RUN_DATE>.xlsx` name at delivery: openpyxl saves through plain Windows
-I/O, so a long name inside a deep `$WORK` hits MAX_PATH and fails.
-The script computes the final grade (single source of truth: 0.50/0.25/0.25, DQ → 1.0)
-and fails (exit 2) naming any listed entry with no row. Fix the missing rows; never
-work around the gate. Sheets: **Ranking**, **Detalle**, **Meta**.
+and pass `--images` to `build_bundles.py` below so instructions point at the PNGs.
 
-### 6. Deliver
+### 3. Build the review targets
 
-Find a local Drive Desktop mount of the same folder (`G:\.shortcut-targets-by-id\<id>\…`,
-`G:\My Drive\…`, `~/Google Drive/…`, `/Volumes/GoogleDrive/…`, or a user-given path),
-copy the Excel there, and say so. Otherwise give the local path for manual upload.
+```bash
+python "$SKILL_DIR/scripts/build_bundles.py" "$WORK" [--images]
+```
 
-### 7. Report
+Emits `bundles.json`: one multi-format target per student who needs one — no slide
+deck at all, deck + supplementary evidence, or evidence carried forward from a
+superseded duplicate submission (generic rule: evidence *kinds* present in the earlier
+upload but missing from the final one ride along, flagged
+`EVIDENCIA DE ENVIO ANTERIOR INCLUIDA`). Students with a single plain deck use the
+simple template instead.
 
-Summarize: reviewed / disqualified / not reviewed (with reasons), the top-5 with tool
-names and finals, every human-review flag, and the Excel location. Remind:
-**the official grade requires human TA review** — this is a shortlist, not a verdict.
+### 4. Dispatch one reviewer per student — fresh context, then GATE
+
+Templates: `templates/reviewer-prompt.md` (single deck) ·
+`templates/bundle-reviewer-prompt.md` (multi-format; feed it each bundle's
+`materials_block`). Dispatch per your platform adapter, ~4 concurrent.
+
+**The fairness gate is mechanical and mandatory — run it on EVERY review:**
+
+```bash
+python "$SKILL_DIR/scripts/validate_review.py" "<review.json>" \
+    --expect-pages=N            # deck reviews
+    --expect-materials="a|b|c"  # bundle reviews
+    --normalized-out="<review.json>"
+```
+
+Exit 2 → re-dispatch that student ONCE with the `problems` list appended. Still
+failing → `NO REVISADO`, reason "revisión incompleta", flag for humans. The validator
+also normalizes fields (strict dates, bare student names, ≤70-char tool, controlled
+flag vocabulary; everything else moves to `observations`) — content is preserved,
+scores and justifications are never edited.
+
+**Spot-check honesty on BOTH passes** — every ~4th review, deck AND bundle alike
+(the pilot spot-checked only deck reviews; the #1-ranked student came from the
+unchecked pass): a small fresh-context checker opens ONE cited page/material and
+compares it against the justification. **A one-page submission cannot cite "slide
+N"** — check content fidelity there instead of citation presence. A failed check →
+flags `SPOT-CHECK FALLIDO` + `REVISAR MANUALMENTE`, never a silent score edit.
+
+### 5. Assemble results
+
+```bash
+python "$SKILL_DIR/scripts/assemble_results.py" "$WORK" "<RUN_DATE>" \
+    --folder-desc="<source description>"
+```
+
+Expects `deck_reviews.json` / `bundle_reviews.json` in `$WORK` (shape:
+`{"reviewed": [{"folder_id", "result", "problems": [], "spotcheck": {...}|null}]}`).
+Produces `results.json`: one row per submitted FILE — one graded row per student, the
+rest NO REVISADO with reasons pointing at the graded row. It re-applies the validator
+normalization (defense in depth) and runs **same-tool reconciliation**: students whose
+verified dates for the same tool differ by >1 month all get `VERIFICAR FECHA` — the
+reviewers verified independently, so this is where disagreement becomes visible.
+
+### 6. Generate the Excel
+
+```bash
+cd "$WORK" && python "$SKILL_DIR/scripts/make_excel.py" results.json res.xlsx \
+  --listing=listing.json --listing=sub-listings/<id>.json ...
+```
+
+Pass EVERY listing JSON (main + each subfolder), with relative paths — 70+ absolute
+`--listing` args can blow the command-length limit. Write to a SHORT name
+(`res.xlsx`), then copy to the final `Resultados-Vigilancia-Tecnologica-<RUN_DATE>.xlsx`
+at delivery (a long name inside a deep `$WORK` hits MAX_PATH). The script computes the
+final grade (single source of truth: 0.50/0.25/0.25, DQ → 1.0) and fails (exit 2)
+naming any listed entry with no row. Fix the missing rows; never work around the gate.
+Sheets: **Ranking**, **Detalle**, **Meta**.
+
+### 7. Deliver
+
+Copy the Excel to the delivery folder the user confirmed (a local Drive-synced path —
+it syncs on its own). Replace the previous run's file if one is there; never leave two
+versions side by side.
+
+### 8. Report
+
+Summarize for the teaching team **in Spanish**: revisados / descalificados / no
+revisados (con motivos), el top-5 con herramientas y notas finales, cada flag de
+revisión humana, y la ubicación del Excel. Remind them:
+**la nota oficial requiere revisión humana** — esto es una preselección, no un
+veredicto.
 
 ## Hard rules
 
 - Every submitted file appears in the Excel — graded, DQ'd, or NO REVISADO with a real
   reason. Nothing silently skipped.
-- Format is never a reason to skip or disqualify a student (see the fairness rule above).
+- Format is never a reason to skip or disqualify a student (fairness rule above).
 - Launch dates are verified by web search; the deck's claim alone is never trusted.
   Low-confidence verification → `age_months` stays null, flag `VERIFICAR FECHA`, never DQ.
 - Border band 3.5–4.5 months always carries flag `VERIFICAR FECHA`.
-- On a resubmission, grade the LATEST but do not lose evidence the student attached to
-  an earlier attempt — attach it and flag it for the human.
+- On a resubmission, grade the LATEST; evidence attached only to an earlier attempt
+  rides along flagged (`build_bundles.py` does this automatically).
+- Never edit a reviewer's scores or justifications. Field normalization relocates
+  out-of-format content; it never changes verdicts. If a verdict looks off, flag it —
+  humans decide.
 - Student files and results stay out of any git repo and out of public artifacts.
 - Do not fabricate scores for unreadable material — mark it NO REVISADO.
+- Human-facing artifacts leave in Spanish (language rule above).

@@ -4,9 +4,14 @@
 una página HTML, un video…) **o** cuando entregó una presentación **más material
 complementario** (evidencia adicional: documentos, hojas de cálculo, capturas, video).
 
-Rellena los `{{placeholders}}` y despacha con el Agent tool, `model: sonnet`.
-`{{materials_block}}` lo genera `prepare_materials.py` + tu paso de armado de bundles:
-es la lista numerada de materiales con la ruta y la instrucción de lectura de cada uno.
+Rellena los `{{placeholders}}` y despacha UN revisor de contexto limpio por
+estudiante, con un modelo de nivel medio CON VISIÓN y acceso a búsqueda web
+(cómo despachar en tu harness → `references/<tu-plataforma>.md`).
+`{{materials_block}}` lo genera `scripts/build_bundles.py` a partir de
+`prepare_materials.py`: la lista numerada de materiales con la ruta y la
+instrucción de lectura de cada uno. Valida SIEMPRE el JSON devuelto con
+`scripts/validate_review.py --expect-materials=...`; un fallo se reintenta UNA
+vez citando los problemas exactos.
 
 ---
 
@@ -104,7 +109,18 @@ En cada justificación cita evidencia concreta y di DE QUÉ MATERIAL viene
 «imagen entregada: …»).
 NO regales nota: 3.0 es un trabajo correcto; 4.5+ exige evidencia sobresaliente.
 
-### 6. Devuelve SOLO este JSON (sin texto adicional)
+### 6. Formato de los campos — ESTRICTO (se valida mecánicamente)
+- `declared_launch_date` y `verified_launch_date`: SOLO "YYYY-MM-DD", "YYYY-MM"
+  o "". Nunca prosa, nunca dos fechas. Contexto adicional → `observations`.
+- `student`: solo el nombre, opcionalmente "(código NNNN)". Sin comentarios.
+- `tool`: máximo 70 caracteres. El detalle largo → `observations`.
+- `flags`: SOLO de esta lista cerrada — VERIFICAR FECHA · DISCREPANCIA FECHA ·
+  ENTREGA SIN PPT · REVISAR MANUALMENTE · SIN EVIDENCIA PROPIA ·
+  IMPACTO NO CUANTIFICADO · HERRAMIENTA GENERAL - FUNCION ESPECIFICA ·
+  EVIDENCIA NO LEGIBLE · EVIDENCIA DE ENVIO ANTERIOR INCLUIDA. Cualquier otra
+  observación libre va en `observations`, no como flag.
+
+### 7. Devuelve SOLO este JSON (sin texto adicional)
 ```json
 {
   "file": "{{primary_label}}",
@@ -119,6 +135,7 @@ NO regales nota: 3.0 es un trabajo correcto; 4.5+ exige evidencia sobresaliente.
   "dq_reason": "",
   "scores": {"poc": null, "impacto": null, "comunicacion": null},
   "flags": [],
+  "observations": "",
   "materials_reviewed": [],
   "pages_read": null,
   "justification": {"poc": "", "impacto": "", "comunicacion": ""},

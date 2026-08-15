@@ -1,14 +1,20 @@
 # vigilancia-tech-review
 
-Claude Code skill that reviews, scores, and ranks MBA **"Vigilancia Tecnológica: IA de
-vanguardia"** student presentations straight from a link-shared Google Drive folder —
-no Google credentials required.
+Harness-agnostic agent skill that reviews, scores, and ranks MBA **"Vigilancia
+Tecnológica: IA de vanguardia"** student presentations — from a link-shared Google
+Drive folder (no Google credentials required) or a local Canvas/Drive-Desktop folder.
+Runs on **Claude Code (Claude)**, **Codex CLI (GPT)**, and **Antigravity (Gemini)**
+via the adapters in `references/`; any other vision-capable agentic harness works by
+following the capability list in `SKILL.md`. **Documentación en español:
+[README.es.md](README.es.md).** Every submitted format is reviewed — pptx, pdf, docx,
+html, png, mp4, xlsx, zip — format is never a reason to skip a student.
 
 For each deck it:
 
 1. Downloads it anonymously from the shared folder (PPTX, PDF, or Google Slides).
-2. Converts it to PDF and dispatches a **Sonnet sub-agent** that reads **every slide
-   visually** (screenshots and charts included — the PoV evidence is usually images).
+2. Converts it to a reviewable form and dispatches a **fresh-context sub-reviewer**
+   (mid-tier vision-capable model of your harness) that reads **every page visually**
+   (screenshots and charts included — the PoV evidence is usually images).
 3. Extracts the ficha técnica and **web-verifies the tool's real launch date** against
    official announcements — decks' claims are never trusted blindly.
 4. Applies the exclusion filter: tools launched **more than 4 months** before the run
