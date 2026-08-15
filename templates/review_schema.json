@@ -1,0 +1,127 @@
+{
+ "type": "object",
+ "additionalProperties": false,
+ "properties": {
+  "file": {
+   "type": "string"
+  },
+  "student": {
+   "type": "string"
+  },
+  "tool": {
+   "type": "string"
+  },
+  "declared_launch_date": {
+   "type": "string"
+  },
+  "verified_launch_date": {
+   "type": "string"
+  },
+  "verification_source": {
+   "type": "string"
+  },
+  "verification_confidence": {
+   "type": "string",
+   "enum": [
+    "alta",
+    "media",
+    "baja"
+   ]
+  },
+  "age_months": {
+   "type": [
+    "number",
+    "null"
+   ]
+  },
+  "disqualified": {
+   "type": "boolean"
+  },
+  "dq_reason": {
+   "type": "string"
+  },
+  "scores": {
+   "type": "object",
+   "additionalProperties": false,
+   "properties": {
+    "poc": {
+     "type": "number"
+    },
+    "impacto": {
+     "type": "number"
+    },
+    "comunicacion": {
+     "type": "number"
+    }
+   },
+   "required": [
+    "poc",
+    "impacto",
+    "comunicacion"
+   ]
+  },
+  "flags": {
+   "type": "array",
+   "items": {
+    "type": "string"
+   }
+  },
+  "observations": {
+   "type": "string"
+  },
+  "materials_reviewed": {
+   "type": "array",
+   "items": {
+    "type": "string"
+   }
+  },
+  "pages_read": {
+   "type": [
+    "number",
+    "null"
+   ]
+  },
+  "justification": {
+   "type": "object",
+   "additionalProperties": false,
+   "properties": {
+    "poc": {
+     "type": "string"
+    },
+    "impacto": {
+     "type": "string"
+    },
+    "comunicacion": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "poc",
+    "impacto",
+    "comunicacion"
+   ]
+  },
+  "evidence_notes": {
+   "type": "string"
+  }
+ },
+ "required": [
+  "file",
+  "student",
+  "tool",
+  "declared_launch_date",
+  "verified_launch_date",
+  "verification_source",
+  "verification_confidence",
+  "age_months",
+  "disqualified",
+  "dq_reason",
+  "scores",
+  "flags",
+  "observations",
+  "materials_reviewed",
+  "pages_read",
+  "justification",
+  "evidence_notes"
+ ]
+}
