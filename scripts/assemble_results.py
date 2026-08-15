@@ -60,9 +60,24 @@ def month_index(datestr):
 
 
 def norm_tool(t):
+    """First TWO significant words — deliberately coarse-but-conservative.
+
+    Four words under-groups fatally: 'ChatGPT Work (modo agente...)' and
+    'ChatGPT Work (agente de OpenAI...)' produce different keys and the
+    reconciliation gate can never fire (caught by mutation test, 2026-08-15).
+    Two words groups same-product rows while keeping distinct products apart
+    ('google flow' vs 'google notebooklm'). Word-order variants of the same
+    product still slip through — this check is best-effort, not a guarantee.
+    """
     t = (t or "").lower()
     t = re.sub(r"[^a-z0-9ñáéíóú ]+", " ", t)
-    words = [w for w in t.split() if len(w) > 2][:4]
+    # Spanish connectors and vendor prefixes carry no product identity —
+    # without dropping them, 'Copilot para Excel' and 'Copilot para Word'
+    # both key as 'copilot para' and distinct products get cross-flagged.
+    stop = {"para", "con", "del", "los", "las", "una", "uno", "modo", "tipo",
+            "microsoft", "google", "openai", "adobe", "365", "app",
+            "plataforma", "función", "funcion", "herramienta"}
+    words = [w for w in t.split() if len(w) > 2 and w not in stop][:2]
     return " ".join(words)
 
 
@@ -86,6 +101,17 @@ def main():
     bundle_by_fid = {i["folder_id"]: i for i in bundle_pass}
     bundle_def = {b["folder_id"]: b for b in bundles}
 
+    # a review whose folder_id matches nothing in the plan is a paid-for
+    # review about to be silently discarded (LLM-mangled hash id, stale
+    # inputs) — say so before it vanishes
+    plan_fids = {e["folder_id"] for e in plan["folders"]}
+    for label, ids in (("deck", deck_by_fid), ("bundle", bundle_by_fid)):
+        for orphan in set(ids) - plan_fids:
+            print(f"AVISO: revisión {label} con folder_id desconocido "
+                  f"'{orphan}' — no corresponde a ninguna carpeta del plan y "
+                  "será ignorada (¿id mal copiado por el revisor?).",
+                  file=sys.stderr)
+
     # carried-forward: source folder -> (authoritative fid, labels)
     carried_from = {}
     for b in bundles:
@@ -96,8 +122,11 @@ def main():
 
     results = []
 
-    def no_rev(fr, reason, flags=None):
+    def no_rev(fr, reason, flags=None, student=""):
+        # every row carries the student's name — a NO REVISADO row whose
+        # Estudiante column is blank makes the Excel unusable for TA triage
         results.append({"id": fr["id"], "file": fr["name"],
+                        "student": student,
                         "status": "no_revisado", "status_reason": reason,
                         "disqualified": False, "flags": list(flags or [])})
 
@@ -106,14 +135,21 @@ def main():
         row["id"] = fr["id"]
         row["file"] = fr["name"]              # always the ORIGINAL filename
         row["status"] = "revisado"
+        problems, _moved = normalize_review(row)
+        # AFTER normalization: the normalizer can blank a malformed student
+        # field — a graded, top-5-eligible row must never lose its name.
         if not (row.get("student") or "").strip() and student_name:
             row["student"] = student_name     # Canvas folder always has it
-        problems, _moved = normalize_review(row)
         row.setdefault("flags", [])
         if problems:
             # should have been caught per-review; keep the grade but surface it
             if "REVISAR MANUALMENTE" not in row["flags"]:
                 row["flags"].append("REVISAR MANUALMENTE")
+            # a date problem specifically disarms/poisons the DQ filter —
+            # mark it with the flag TAs filter on for date doubts
+            if any("fecha" in p.lower() or "launch_date" in p for p in problems):
+                if "VERIFICAR FECHA" not in row["flags"]:
+                    row["flags"].append("VERIFICAR FECHA")
             extra_notes = ((extra_notes + " | ") if extra_notes else "") + \
                 "Validación en ensamblaje: " + "; ".join(problems)
         for f in (extra_flags or []):
@@ -134,9 +170,18 @@ def main():
         if not sc:
             return [], None
         notes = sc.get("notes", "")
+        if "plausible" not in sc:
+            # an unrecognized verdict shape must read as UNKNOWN — branding a
+            # student a suspected fabricator over a schema drift is the worst
+            # possible false positive
+            return [], ("Spot-check con formato de veredicto no reconocido — "
+                        f"tratado como NO CONCLUYENTE. Detalle: {notes[:300]}")
         if sc.get("plausible"):
             return [], f"Spot-check de honestidad: OK. {notes[:400]}"
-        if item.get("pages_total") == 1:
+        pages_total = item.get("pages_total")
+        if pages_total is None:
+            pages_total = (item.get("result") or {}).get("pages_total")
+        if pages_total == 1:
             return ([], "Spot-check: entrega de UNA página — no existe número "
                         "de slide que citar; el verificador evaluó fidelidad "
                         f"de contenido. Detalle: {notes[:400]}")
@@ -159,9 +204,11 @@ def main():
                                "dentro de la revisión integral de la entrega "
                                "final del estudiante — la nota está en esa fila.",
                            ["ENTREGA DUPLICADA",
-                            "EVIDENCIA DE ENVIO ANTERIOR INCLUIDA"])
+                            "EVIDENCIA DE ENVIO ANTERIOR INCLUIDA"],
+                           student=e["student_name"])
                 else:
-                    no_rev(fr, e["no_deck_reason"], ["ENTREGA DUPLICADA"])
+                    no_rev(fr, e["no_deck_reason"], ["ENTREGA DUPLICADA"],
+                           student=e["student_name"])
             continue
 
         bundle = bundle_by_fid.get(fid)
@@ -171,8 +218,28 @@ def main():
             bdef = bundle_def.get(fid, {})
             primary_name = bdef.get("primary_label", "")
             primary = next((fr for fr in files if fr["name"] == primary_name),
-                           files[0] if files else None)
+                           None)
+            if primary is None and files:
+                # e.g. a .zip submission whose bundle labels are inner files —
+                # attach to the first plan file but SAY SO, never silently
+                print(f"AVISO: primary_label '{primary_name}' no coincide con "
+                      f"ningún archivo del plan para '{e['student_name']}' — "
+                      f"la nota se ancla a '{files[0]['name']}'.",
+                      file=sys.stderr)
+                primary = files[0]
             if primary is None:
+                # a paid-for review with no plan files to attach it to means
+                # the inputs are inconsistent (stale bundles.json vs a
+                # regenerated plan) — NEVER a silent drop
+                print(f"ERROR: revisión de bundle para {fid} "
+                      f"('{e['student_name']}') sin archivos en el plan — "
+                      "entradas inconsistentes; fila sintética generada.",
+                      file=sys.stderr)
+                no_rev({"id": fid, "name": f"({e['student_name']} — "
+                                            "inconsistencia de entradas)"},
+                       "revisión existente pero sin archivos en review_plan "
+                       "— regenerar bundles.json y re-ensamblar.",
+                       ["REVISAR MANUALMENTE"], student=e["student_name"])
                 continue
             if bundle.get("problems"):
                 no_rev(primary, "revisión incompleta tras reintento — "
@@ -195,12 +262,29 @@ def main():
                 if sn:
                     note += " | " + sn
                 graded(primary, r, flags, note, e["student_name"])
+            # "SÍ fue leído" may only be asserted for files the bundle
+            # actually LISTED — anything else is a false certification that
+            # suppresses the human follow-up (finding 4, 2026-08-15 review).
+            listed = set(bdef.get("material_labels") or [])
+            review_ok = not bundle.get("problems")
             for fr in files:
                 if fr is primary:
                     continue
-                no_rev(fr, "material adjunto del estudiante; SÍ fue leído "
-                           "dentro de la revisión integral de "
-                           f"'{primary['name']}' — la nota está en esa fila.")
+                if fr["name"] in listed and review_ok:
+                    no_rev(fr, "material adjunto del estudiante; SÍ fue leído "
+                               "dentro de la revisión integral de "
+                               f"'{primary['name']}' — la nota está en esa fila.",
+                           student=e["student_name"])
+                elif fr["name"] in listed:
+                    no_rev(fr, "material listado en una revisión integral que "
+                               "quedó incompleta — revisar manualmente junto "
+                               f"con '{primary['name']}'.",
+                           ["REVISAR MANUALMENTE"], student=e["student_name"])
+                else:
+                    no_rev(fr, "material adjunto NO incluido en la revisión "
+                               "integral (no llegó al bundle) — revisar "
+                               "manualmente.", ["REVISAR MANUALMENTE"],
+                           student=e["student_name"])
             continue
 
         if deck:                               # pass 1 (deck-only)
@@ -214,15 +298,26 @@ def main():
             for fr in e.get("deck_source_of", []):
                 no_rev(fr, "archivo fuente de la MISMA presentación ya "
                            f"revisada ('{e['deck']['name']}', mismo nombre "
-                           "base) — la nota está en esa fila.")
+                           "base) — la nota está en esa fila.",
+                       student=e["student_name"])
             for fr in e.get("evidence", []):
                 no_rev(fr, "material adjunto no incluido en la revisión — "
-                           "revisar manualmente.", ["REVISAR MANUALMENTE"])
+                           "revisar manualmente.", ["REVISAR MANUALMENTE"],
+                       student=e["student_name"])
             continue
 
+        if not files:
+            # an empty folder must still be VISIBLE to the TAs — absence of a
+            # row is indistinguishable from a pipeline drop (the pilot's
+            # MAX_PATH bug looked exactly like this)
+            no_rev({"id": fid, "name": "(carpeta sin archivos)"},
+                   f"la carpeta de {e['student_name']} está vacía — verificar "
+                   "en Canvas si el estudiante entregó.",
+                   ["REVISAR MANUALMENTE"], student=e["student_name"])
+            continue
         for fr in files:
             no_rev(fr, "no se pudo revisar (sin resultado de ninguna pasada).",
-                   ["REVISAR MANUALMENTE"])
+                   ["REVISAR MANUALMENTE"], student=e["student_name"])
 
     # ---- same-tool cross-student reconciliation ---------------------------
     groups = {}

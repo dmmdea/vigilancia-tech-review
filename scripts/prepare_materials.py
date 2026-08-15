@@ -26,7 +26,15 @@ can be filled in separately (e.g. a local whisper) via --transcript.
 Usage:
     python prepare_materials.py <workdir> [--only=<folder_id,...>]
                                 [--matroot=<short dir>]
+                                [--rasterize]
                                 [--transcript=<folder_id>=<file.txt>]...
+
+--rasterize: additionally run pdf_to_images.py on every produced PDF and
+record `page_images` (+ `truncated_from` when the PDF exceeds the page cap)
+on the item — REQUIRED on harnesses whose file reader cannot render PDF
+pages (Codex, Antigravity); build_bundles --images then emits image
+instructions. Without this flag those keys never exist and --images
+silently degrades to PDF instructions the reviewer cannot follow.
 
 Reads <workdir>/review_plan.json, writes <workdir>/materials.json.
 
@@ -45,13 +53,25 @@ import sys
 import tempfile
 import zipfile
 
+try:
+    from pypdf import PdfReader
+except ImportError:
+    print("ERROR: pypdf no está instalado (pip install -r requirements.txt). "
+          "Sin él no se puede contar páginas y el gate de cobertura queda "
+          "desactivado para TODOS los estudiantes — corrígelo antes de seguir.",
+          file=sys.stderr)
+    sys.exit(2)
+
 for _s in (sys.stdout, sys.stderr):
     if _s in (sys.__stdout__, sys.__stderr__) and hasattr(_s, "reconfigure"):
         _s.reconfigure(encoding="utf-8")
 
 IMAGE_EXT = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tif", ".tiff"}
 VIDEO_EXT = {".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v"}
-SHEET_EXT = {".xlsx", ".xlsm", ".xls", ".csv"}
+# .csv deliberately NOT here: openpyxl cannot open CSV — it must route to the
+# TEXT_EXT passthrough (an earlier version sent every .csv to a guaranteed
+# "lectura de hoja de cálculo falló" error item).
+SHEET_EXT = {".xlsx", ".xlsm", ".xls"}
 TEXT_EXT = {".py", ".txt", ".md", ".json", ".log", ".sql", ".js", ".ts", ".csv"}
 DOC_EXT = {".docx", ".doc", ".rtf", ".odt"}
 HTML_EXT = {".html", ".htm"}
@@ -94,8 +114,9 @@ SOFFICE = find_exe(
 
 
 def pdf_pages(path):
+    """Page count, or None for THIS unreadable file (pypdf import is checked
+    at module load — a missing dependency is exit 2, never a silent None)."""
     try:
-        from pypdf import PdfReader
         return len(PdfReader(path).pages)
     except Exception:
         return None
@@ -197,22 +218,26 @@ def slides_to_pdf(src, dst):
 
 
 def sheet_to_text(src, dst_txt, max_rows=400):
+    """Returns a truncation note (str) or None if everything was dumped."""
     import openpyxl
     # NOT read_only: a ReadOnlyWorksheet lacks .dimensions and friends.
     wb = openpyxl.load_workbook(src, data_only=True)
     lines = []
+    truncated = []
     for ws in wb.worksheets:
         lines.append(f"=== HOJA: {ws.title} "
                      f"({ws.max_row} filas x {ws.max_column} columnas) ===")
         for i, row in enumerate(ws.iter_rows(values_only=True), 1):
             if i > max_rows:
                 lines.append(f"... (truncado en {max_rows} de {ws.max_row} filas)")
+                truncated.append(f"{ws.title}: {max_rows}/{ws.max_row} filas")
                 break
             if any(c is not None and str(c).strip() for c in row):
                 lines.append(" | ".join("" if c is None else str(c) for c in row))
         lines.append("")
     with open(dst_txt, "w", encoding="utf-8") as f:
         f.write("\n".join(lines))
+    return ("TRUNCADO — " + "; ".join(truncated)) if truncated else None
 
 
 def video_keyframes(src, outdir, n=8):
@@ -239,6 +264,22 @@ def video_keyframes(src, outdir, n=8):
                        timeout=600)
     frames = sorted(f for f in os.listdir(outdir) if f.endswith(".jpg"))
     return frames, dur, "" if frames else (r.stderr or "")[-300:]
+
+
+def rasterize_pdf(pdf_path, outdir):
+    """Run pdf_to_images.py; returns (images, truncated_from|None, err)."""
+    r = subprocess.run([sys.executable,
+                        os.path.join(HERE, "pdf_to_images.py"),
+                        pdf_path, outdir],
+                       capture_output=True, text=True, errors="replace",
+                       timeout=600)
+    if r.returncode == 2:
+        print(r.stderr, file=sys.stderr)
+        sys.exit(2)          # environment problem (pymupdf missing): stop
+    if r.returncode != 0:
+        return [], None, r.stderr.strip()[:200]
+    info = json.loads(r.stdout)
+    return info["images"], info.get("truncated_from"), ""
 
 
 def process_file(fr, folder_id, items, matroot, prefix=""):
@@ -285,10 +326,12 @@ def process_file(fr, folder_id, items, matroot, prefix=""):
             local = stage(src, os.path.join(base, f"{tag}_src{ext}"))
             dst = os.path.join(base, f"{tag}.txt")
             try:
-                sheet_to_text(local, dst)
+                trunc = sheet_to_text(local, dst)
+                note = "datos de hoja de cálculo extraídos"
+                if trunc:
+                    note += f" ({trunc}; filas restantes NO revisadas)"
                 items.append({"kind": "text", "path": os.path.abspath(dst),
-                              "label": name,
-                              "note": "datos de hoja de cálculo extraídos"})
+                              "label": name, "note": note})
             except Exception as e:
                 fail(f"lectura de hoja de cálculo falló: {e}")
         elif ext in VIDEO_EXT:
@@ -341,6 +384,7 @@ def main():
     only = None
     matroot = os.path.join(tempfile.gettempdir(), "vtr-mat")
     transcripts = {}
+    rasterize = "--rasterize" in sys.argv[1:]
     for a in sys.argv[1:]:
         if a.startswith("--only="):
             only = set(a.split("=", 1)[1].split(","))
@@ -361,6 +405,13 @@ def main():
         with open(out_path, encoding="utf-8") as f:
             materials = json.load(f)
 
+    plan_fids = {e["folder_id"] for e in plan["folders"]}
+    for k in transcripts:
+        if k not in plan_fids:
+            print(f"AVISO: --transcript={k}=... no corresponde a ninguna "
+                  "carpeta del plan — la transcripción NO se adjuntará "
+                  "(¿folder_id mal escrito?)", file=sys.stderr)
+
     for e in plan["folders"]:
         fid = e["folder_id"]
         if only and fid not in only:
@@ -370,6 +421,18 @@ def main():
                 if e["status"] == "review" else e.get("no_deck_files", []))
         for fr in srcs:
             process_file(fr, fid, items, matroot)
+        if rasterize:
+            for it in items:
+                if it["kind"] == "pdf" and it.get("path"):
+                    imgdir = os.path.splitext(it["path"])[0] + "_pages"
+                    imgs, trunc, err = rasterize_pdf(it["path"], imgdir)
+                    if imgs:
+                        it["page_images"] = imgs
+                        if trunc:
+                            it["truncated_from"] = trunc
+                    else:
+                        it["note"] = ((it.get("note", "") + " | ") if it.get("note")
+                                      else "") + f"rasterización falló: {err}"
         for it in items:
             if it["kind"] == "video" and fid in transcripts:
                 it["transcript_path"] = transcripts[fid]

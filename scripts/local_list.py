@@ -40,7 +40,9 @@ for _s in (sys.stdout, sys.stderr):
         _s.reconfigure(encoding="utf-8")
 
 REVIEWABLE_EXT = {".pptx", ".ppt", ".pdf", ".odp"}
-SKIP_NAMES = {"desktop.ini", ".ds_store", "thumbs.db", "index.html"}
+# NOTE: never put a legitimate submission format here (an earlier version
+# skipped "index.html" — a real student submission shape; silently dropped).
+SKIP_NAMES = {"desktop.ini", ".ds_store", "thumbs.db"}
 
 CANVAS_RE = re.compile(
     r"^(\d+-\d+)\s*-\s*(.+?)\s*-\s*(\d{1,2} de \w+ de \d{4} \d{1,2}[_:]\d{2})$")
@@ -62,7 +64,7 @@ def longpath(p: str) -> str:
 
 
 def sid(*parts: str) -> str:
-    return "local-" + hashlib.sha1("||".join(parts).encode("utf-8")).hexdigest()[:16]
+    return "local-" + hashlib.sha256("||".join(parts).encode("utf-8")).hexdigest()[:16]
 
 
 def wopen(path, mode="w"):
@@ -81,13 +83,18 @@ def isdir(p):
 
 
 def getsize(p):
+    """Size, or (None, reason). On a Drive Desktop mount an OSError here often
+    predicts a later copy failure — keep the cause for diagnostics."""
     try:
-        return os.path.getsize(longpath(p))
-    except OSError:
-        return None
+        return os.path.getsize(longpath(p)), None
+    except OSError as e:
+        return None, str(e)
 
 
 def parse_ts(ts: str):
+    """Returns a sortable tuple, or None when the timestamp cannot be parsed.
+    Callers must treat None as 'cannot decide order' and SAY SO — a silent
+    fallback here once risked grading the WRONG duplicate as authoritative."""
     try:
         parts = ts.replace("_", ":").split(" de ")
         day = int(parts[0])
@@ -97,11 +104,15 @@ def parse_ts(ts: str):
         hh, mm = rest[1].split(":")
         return (year, month, day, int(hh), int(mm))
     except Exception:
-        return (0, 0, 0, 0, 0)
+        return None
 
 
-def collect_files(folder):
-    """Files directly inside `folder`.
+def collect_files(folder, notes=None, depth=1):
+    """Files inside `folder`, descending ONE level into subfolders (students
+    often keep screenshots in an "evidencias/" subfolder). Anything deeper
+    gets a visible note — never a silent skip; a silently ignored folder is
+    indistinguishable from "the student didn't submit", the pilot's worst
+    failure class.
 
     Deliberately tests "not a directory" rather than os.path.isfile(): on a
     Google Drive Desktop mount isfile() can report False for a real file, and
@@ -113,9 +124,21 @@ def collect_files(folder):
             continue
         full = os.path.join(folder, name)
         if isdir(full):
+            if depth > 0:
+                sub = collect_files(full, notes=notes, depth=depth - 1)
+                for fr in sub:
+                    fr["name"] = f"{name}/{fr['name']}"
+                out.extend(sub)
+            elif notes is not None:
+                notes.append(f"subcarpeta no explorada (muy profunda): {name} "
+                             "— revisar manualmente")
             continue
-        out.append({"name": name, "ext": os.path.splitext(name)[1].lower(),
-                    "path": full, "size": getsize(full)})
+        size, size_err = getsize(full)
+        rec = {"name": name, "ext": os.path.splitext(name)[1].lower(),
+               "path": full, "size": size}
+        if size_err:
+            rec["size_error"] = size_err
+        out.append(rec)
     return out
 
 
@@ -151,7 +174,8 @@ def main():
             fid = sid("FOLDER", name)
             main_listing["entries"].append(
                 {"id": fid, "name": name, "kind": "folder", "href": ""})
-            files = collect_files(folder)
+            folder_notes = []
+            files = collect_files(folder, notes=folder_notes)
             sub_entries = []
             for fr in files:
                 fr["id"] = sid("FILE", fid, fr["name"])
@@ -169,8 +193,30 @@ def main():
                 "canvas_key": m.group(1) if m else None,
                 "student_name": m.group(2) if m else name,
                 "timestamp": m.group(3) if m else "",
+                "collect_notes": folder_notes,
                 "files": files})
         dup = {k: v for k, v in groups.items() if len(v) > 1}
+
+        # F2 fix: loose files at the TOP level alongside student folders are
+        # submissions too (a stray "Entrega-Juan.pptx" next to Canvas folders)
+        # — each becomes its own flat-style entry, never silently dropped.
+        loose = collect_files(base, notes=None, depth=0)
+        for fr in loose:
+            fr["id"] = sid("FILE", main_listing["folder_id"], fr["name"])
+            main_listing["entries"].append({
+                "id": fr["id"], "name": fr["name"],
+                "kind": "file" if fr["ext"] in REVIEWABLE_EXT else "other",
+                "href": ""})
+            manifest["students"].append({
+                "folder_name": fr["name"],
+                "folder_id": sid("SOLO", fr["name"]),
+                "canvas_key": None,
+                "student_name": os.path.splitext(fr["name"])[0],
+                "timestamp": "", "collect_notes": [],
+                "files": [fr]})
+            print(f"NOTE archivo suelto en el nivel superior (junto a las "
+                  f"carpetas de estudiantes): {fr['name']} — se trata como "
+                  "entrega propia; confirmar de quién es", file=sys.stderr)
     else:
         manifest["shape"] = "flat"
         files = collect_files(base)
@@ -194,8 +240,19 @@ def main():
 
     by_folder = {s["folder_name"]: s for s in manifest["students"]}
     superseded = {}
+    ts_warnings = set()
     for _key, names in dup.items():
-        ordered = sorted(names, key=lambda n: parse_ts(by_folder[n]["timestamp"]))
+        parsed = {n: parse_ts(by_folder[n]["timestamp"]) for n in names}
+        bad = [n for n, t in parsed.items() if t is None]
+        if bad:
+            # cannot prove which submission is final — order best-effort but
+            # SAY SO loudly and on every affected plan entry
+            for n in names:
+                ts_warnings.add(n)
+            print("NOTE grupo duplicado con timestamp no interpretable "
+                  f"({bad}) — verificar manualmente cuál entrega es la final",
+                  file=sys.stderr)
+        ordered = sorted(names, key=lambda n: parsed[n] or (0, 0, 0, 0, 0))
         for n in ordered[:-1]:
             superseded[n] = ordered[-1]
 
@@ -205,13 +262,21 @@ def main():
         files = s["files"]
         e = {"folder_name": name, "folder_id": s["folder_id"],
              "canvas_key": s["canvas_key"], "student_name": s["student_name"],
-             "timestamp": s["timestamp"], "notes": []}
+             "timestamp": s["timestamp"],
+             "notes": list(s.get("collect_notes") or [])}
 
+        if name in ts_warnings:
+            e["notes"].append("ORDEN DE ENTREGAS INCIERTO: timestamp no "
+                              "interpretable en el grupo duplicado — verificar "
+                              "manualmente cuál entrega es la final")
         if name in superseded:
+            auth = superseded[name]
             e.update(status="no_deck", no_deck_files=files,
+                     superseded_by=auth,
+                     superseded_by_id=by_folder[auth]["folder_id"],
                      no_deck_reason=("entrega duplicada del mismo estudiante — "
                                      "reemplazada por un envío posterior en la "
-                                     f"carpeta '{superseded[name]}'; se revisó "
+                                     f"carpeta '{auth}'; se revisó "
                                      "esa versión."))
             plan["folders"].append(e)
             continue

@@ -57,9 +57,55 @@ CANONICAL_FLAGS = (
     "SPOT-CHECK FALLIDO", "EVIDENCIA NO LEGIBLE",
     "EVIDENCIA DE ENVIO ANTERIOR INCLUIDA",
 )
-DATE_OK = re.compile(r"^(\d{4}-\d{2}(-\d{2})?)?$")
-DATE_FIND = re.compile(r"\d{4}-\d{2}(-\d{2})?")
+DATE_OK = re.compile(r"^(\d{4}-(0[1-9]|1[0-2])(-(0[1-9]|[12]\d|3[01]))?)?$")
+DATE_FIND = re.compile(r"\d{4}-(?:0[1-9]|1[0-2])(?:-(?:0[1-9]|[12]\d|3[01]))?")
+# Spanish long-form and dd/mm/yyyy dates are EXPECTED reviewer output (the
+# skill's own language rule mandates Spanish) — they must normalize, not
+# hard-fail the gate.
+MESES = {"enero": "01", "febrero": "02", "marzo": "03", "abril": "04",
+         "mayo": "05", "junio": "06", "julio": "07", "agosto": "08",
+         "septiembre": "09", "octubre": "10", "noviembre": "11",
+         "diciembre": "12"}
+DATE_ES = re.compile(r"(\d{1,2})\s+de\s+(" + "|".join(MESES) + r")\s+(?:de\s+)?(\d{4})",
+                     re.IGNORECASE)
+DATE_DMY = re.compile(r"\b(\d{1,2})/(\d{1,2})/(\d{4})\b")
 STUDENT_OK = re.compile(r"^[^()]{0,60}(\(c[oó]digo [\w]+\))?$", re.IGNORECASE)
+
+
+def find_dates(text):
+    """All distinct ISO-normalizable dates in `text`, in order of appearance."""
+    found = []
+    for m in DATE_FIND.finditer(text):
+        found.append(m.group(0))
+    for m in DATE_ES.finditer(text):
+        found.append(f"{m.group(3)}-{MESES[m.group(2).lower()]}-{int(m.group(1)):02d}")
+    for m in DATE_DMY.finditer(text):
+        d, mo, y = int(m.group(1)), int(m.group(2)), m.group(3)
+        if 1 <= mo <= 12 and 1 <= d <= 31:
+            found.append(f"{y}-{mo:02d}-{d:02d}")
+    seen = []
+    for f in found:
+        if f not in seen:
+            seen.append(f)
+    return seen
+
+# Reviewer wordings that MEAN a canonical flag but don't prefix-match it —
+# without these aliases a flag with real canonical intent silently drops out
+# of every TA flag-filtered view (relocation to observations loses the
+# flag's FUNCTION even though the text survives).
+FLAG_ALIASES = {
+    "DISCREPANCIA DE FECHA": "DISCREPANCIA FECHA",
+    "DISCREPANCIA EN FECHA": "DISCREPANCIA FECHA",
+    "ENTREGA SIN DIAPOSITIVAS": "ENTREGA SIN PPT",
+    "SIN PPT": "ENTREGA SIN PPT",
+    "SIN DIAPOSITIVAS": "ENTREGA SIN PPT",
+    "FORMATO NO-PPT": "ENTREGA SIN PPT",
+    "SIN EVIDENCIA": "SIN EVIDENCIA PROPIA",
+    "IMPACTO SIN CUANTIFICAR": "IMPACTO NO CUANTIFICADO",
+    "SIN CUANTIFICACION DE IMPACTO": "IMPACTO NO CUANTIFICADO",
+    "REVISION MANUAL": "REVISAR MANUALMENTE",
+    "VERIFICAR LA FECHA": "VERIFICAR FECHA",
+}
 
 
 def normalize_review(r, expect_pages=None, expect_materials=None):
@@ -71,13 +117,28 @@ def normalize_review(r, expect_pages=None, expect_materials=None):
     """
     problems = []
     moved = []
+    # LLM-drifted shapes must not crash the gate (a TypeError inside assembly
+    # loses every student's row at once): coerce before touching anything.
+    o = r.get("observations")
+    if isinstance(o, list):
+        r["observations"] = " | ".join(str(x) for x in o)
+    elif o is not None and not isinstance(o, str):
+        r["observations"] = str(o)
+    f0 = r.get("flags")
+    if isinstance(f0, str):
+        r["flags"] = [f0]
+    elif f0 is not None and not isinstance(f0, list):
+        r["flags"] = [str(f0)]
     obs = [r.get("observations")] if r.get("observations") else []
 
     # --- scores & justifications (hard failures, never auto-fixed) ---------
     s = r.get("scores") or {}
     for k in ("poc", "impacto", "comunicacion"):
         v = s.get(k)
-        if not isinstance(v, (int, float)) or not 1.0 <= v <= 5.0:
+        # isinstance(True, int) is True in Python — a reviewer emitting
+        # "poc": true must NOT pass as a real 1.0 grade.
+        if (isinstance(v, bool) or not isinstance(v, (int, float))
+                or not 1.0 <= v <= 5.0):
             problems.append(f"scores.{k} inválido: {v!r}")
     j = r.get("justification") or {}
     for k in ("poc", "impacto", "comunicacion"):
@@ -89,14 +150,23 @@ def normalize_review(r, expect_pages=None, expect_materials=None):
         problems.append(f"pages_read ({r.get('pages_read')}) != páginas "
                         f"totales ({expect_pages})")
     if expect_materials is not None:
-        seen = set(r.get("materials_reviewed") or [])
-        missing = [m for m in expect_materials if m not in seen]
+        def bare(x):
+            return str(x).strip().strip("«»\"'")
+        seen = {bare(m) for m in (r.get("materials_reviewed") or [])}
+        missing = [m for m in expect_materials if bare(m) not in seen]
         if missing:
             problems.append(f"materials_reviewed no cubre: {missing}")
 
     # --- verification coherence -------------------------------------------
     conf = r.get("verification_confidence")
     age = r.get("age_months")
+    if isinstance(age, bool):
+        age = None
+    if conf not in ("alta", "media", "baja"):
+        # an unrecognized value would escape BOTH coherence branches and
+        # silently disarm the DQ filter for the row
+        problems.append(f"verification_confidence inválida: {conf!r} "
+                        "(solo alta|media|baja)")
     if conf in ("alta", "media") and not isinstance(age, (int, float)):
         problems.append("confianza alta/media pero age_months no es numérico "
                         "(desactiva silenciosamente el filtro DQ)")
@@ -104,17 +174,44 @@ def normalize_review(r, expect_pages=None, expect_materials=None):
         problems.append("confianza baja pero age_months no es null "
                         "(un número no verificado presentado como dato)")
 
+    # --- DQ coherence: the exclusion decision itself gets a mechanical gate
+    dq = bool(r.get("disqualified"))
+    if dq and conf == "baja":
+        problems.append("disqualified=true con confianza baja — la regla "
+                        "prohíbe descalificar sin verificación confiable")
+    if (not dq and conf in ("alta", "media")
+            and isinstance(age, (int, float)) and age > 4.5):
+        problems.append(f"age_months={age} (> 4.5) con confianza {conf} pero "
+                        "disqualified=false — el filtro de exclusión exige DQ")
+    if (dq and isinstance(age, (int, float)) and age <= 4.0
+            and not (r.get("dq_reason") or "").strip()):
+        problems.append("disqualified=true con age_months <= 4.0 y sin "
+                        "dq_reason — justifica la descalificación")
+
     # --- date fields: extract-or-empty, prose to observations --------------
     for f_ in ("declared_launch_date", "verified_launch_date"):
         v = (r.get(f_) or "").strip()
         if DATE_OK.match(v):
             continue
-        m = DATE_FIND.search(v)
+        candidates = find_dates(v)
         obs.append(f"{f_} original del revisor: {v}")
         moved.append(f_)
-        r[f_] = m.group(0) if m else ""
-        if not m:
-            problems.append(f"{f_} sin fecha reconocible: {v[:60]!r}")
+        if len(candidates) == 1:
+            # A reconstructed date is an INFERENCE, not a verification — it
+            # must carry VERIFICAR FECHA or a "consultado el ..." access date
+            # silently becomes a launch date and drives the DQ filter.
+            r[f_] = candidates[0]
+            r.setdefault("flags", [])
+            if "VERIFICAR FECHA" not in r["flags"]:
+                r["flags"].append("VERIFICAR FECHA")
+        else:
+            r[f_] = ""
+            if not candidates:
+                problems.append(f"{f_} sin fecha reconocible: {v[:60]!r}")
+            else:
+                problems.append(f"{f_} con {len(candidates)} fechas distintas "
+                                f"({candidates}) — entrega UNA sola fecha en "
+                                "formato YYYY-MM-DD")
 
     # --- student field: name (+ código) only -------------------------------
     st = (r.get("student") or "").strip()
@@ -132,12 +229,24 @@ def normalize_review(r, expect_pages=None, expect_materials=None):
         r["tool"] = tool[:67] + "..."
 
     # --- flag vocabulary ----------------------------------------------------
+    def _flag_match(base, name):
+        """Prefix match with a WORD BOUNDARY: 'VERIFICAR FECHAS COINCIDEN'
+        must NOT collapse to VERIFICAR FECHA (meaning inversion)."""
+        if base == name:
+            return True
+        if base.startswith(name):
+            nxt = base[len(name):len(name) + 1]
+            return not nxt.isalnum()
+        return False
+
     kept = []
     for f_ in r.get("flags") or []:
         f_ = str(f_).strip()
-        base = f_.split(":")[0].strip().upper()
-        canon = next((c for c in CANONICAL_FLAGS
-                      if base == c or base.startswith(c)), None)
+        base = f_.split(":")[0].split("(")[0].strip().upper()
+        canon = next((c for c in CANONICAL_FLAGS if _flag_match(base, c)), None)
+        if canon is None:
+            canon = next((v for a, v in FLAG_ALIASES.items()
+                          if _flag_match(base, a)), None)
         if canon:
             if canon not in kept:
                 kept.append(canon)

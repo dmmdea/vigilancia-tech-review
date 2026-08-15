@@ -1,68 +1,112 @@
-# vigilancia-tech-review (documentación en español)
+<div align="center">
 
-Skill agéntico que revisa, califica y clasifica las presentaciones estudiantiles de la
-actividad del MBA de Uniandes **"Vigilancia Tecnológica: IA de vanguardia"** — desde
-una carpeta compartida de Google Drive por enlace, o desde una carpeta local (montaje
-de Google Drive Desktop / descarga masiva de Canvas). Sin credenciales de Google.
+# 🏛️ vigilancia-tech-review
 
-Funciona en cualquier harness agéntico con visión: **Claude Code (Claude)**,
-**Codex CLI (GPT)** y **Antigravity (Gemini)** tienen adaptadores dedicados en
-`references/`; cualquier otro harness sigue la lista de capacidades de `SKILL.md`.
+**Universidad de los Andes · MBA · Reto Integrador 1 – Tecnología de Información**
 
-## Qué hace, por estudiante
+*Revisión, calificación y ranking asistidos por IA de las presentaciones estudiantiles de "Vigilancia Tecnológica" — construido por el equipo docente del curso.*
 
-1. **Inventaría** cada entrega (`scripts/local_list.py` o `scripts/drive_list.py`) —
-   detecta carpetas por estudiante (nomenclatura Canvas con fechas en español),
-   entregas duplicadas (gana la más reciente) y archivos de evidencia adicionales.
-2. **Convierte todo formato a algo revisable** (`scripts/prepare_materials.py`):
-   pptx/docx/html → PDF; imágenes tal cual; xlsx → volcado de celdas; video →
-   fotogramas + transcripción; zip → extraído y re-enrutado. **El formato nunca es
-   motivo para saltarse a un estudiante ni para descalificarlo.**
-3. **Despacha un revisor de IA con contexto limpio por estudiante** que LEE todas las
-   páginas visualmente, verifica por web la fecha real de lanzamiento de la
-   herramienta, aplica el filtro de exclusión (>4 meses → 1.0), y califica
-   PoC (50%) · Impacto (25%) · Comunicación (25%) citando slides concretas.
-4. **Valida cada revisión mecánicamente** (`scripts/validate_review.py`): cobertura de
-   páginas/materiales, rangos de nota, formatos estrictos de campos, vocabulario
-   cerrado de flags. Un fallo se reintenta UNA vez; si persiste, la fila queda
-   NO REVISADO con motivo. Hay spot-checks de honestidad en ambas rutas de revisión.
-5. **Ensambla y reconcilia** (`scripts/assemble_results.py`): una fila por archivo
-   entregado, una fila calificada por estudiante, y reconciliación entre estudiantes
-   que presentaron la misma herramienta (fechas divergentes → VERIFICAR FECHA).
-6. **Genera el Excel** (`scripts/make_excel.py`): hojas **Ranking** (ordenado, top-5
-   con estrella, DQ en rojo, no-revisado en gris), **Detalle** (justificaciones con
-   citas de slides) y **Meta**. La nota final se calcula en un único lugar.
+[![Licencia: Académica Uniandes](https://img.shields.io/badge/licencia-Acad%C3%A9mica%20Uniandes-B6862C)](LICENSE.md)
+[![Plataformas](https://img.shields.io/badge/harness-Claude%20Code%20%7C%20Codex%20%7C%20Antigravity-4c72b0)](references/)
+[![Python](https://img.shields.io/badge/python-3.10%2B-3776AB)](requirements.txt)
+[![Docs](https://img.shields.io/badge/docs-english-red)](README.md)
 
-## Reglas duras
+</div>
 
-- Todo archivo entregado aparece en el Excel — calificado, descalificado o
-  NO REVISADO con motivo real. Nada se omite en silencio.
-- Las fechas de lanzamiento se verifican por búsqueda web; nunca se confía solo en lo
-  declarado. Verificación de baja confianza → nunca descalifica, flag VERIFICAR FECHA.
-- Banda fronteriza 3.5–4.5 meses → siempre flag VERIFICAR FECHA.
-- En una re-entrega se califica la ÚLTIMA versión, pero la evidencia adjunta solo al
-  envío anterior acompaña la revisión (flag EVIDENCIA DE ENVIO ANTERIOR INCLUIDA).
-- Los puntajes del revisor nunca se editan; la normalización de campos solo reubica
-  contenido fuera de formato. Ante dudas, flag — deciden los humanos.
-- Los archivos de estudiantes y los resultados nunca entran a un repositorio git ni a
-  artefactos públicos.
-- **Todo artefacto de cara a docentes/estudiantes sale en español.**
-- **La nota oficial requiere revisión humana** — el skill produce una preselección con
-  evidencia citada, no un veredicto.
+---
+
+Skill agéntico que revisa **todas** las entregas estudiantiles de la actividad
+*Vigilancia Tecnológica: IA de vanguardia* del MBA de Uniandes y entrega al equipo
+docente un Excel clasificado y codificado por colores. Nunca asigna la nota oficial:
+produce puntajes candidatos con evidencia citada y una preselección top-5.
+**La nota oficial siempre requiere revisión humana.**
+
+## Por qué existe
+
+Más de 75 estudiantes entregan cada semana presentaciones (y documentos Word, páginas
+HTML, capturas, videos, hojas de cálculo…). Revisar cada una con honestidad — leer cada
+slide, verificar en la web la fecha real de lanzamiento de la herramienta, comprobar que
+la evidencia es propia — le toma días al equipo docente. Este skill hace la primera
+pasada exhaustiva en menos de una hora y entrega una preselección defendible con
+justificaciones que citan slides concretas.
+
+## Qué hace
+
+```mermaid
+flowchart LR
+    A[Inventario<br/>local_list.py / drive_list.py] --> B[Preparar materiales<br/>prepare_materials.py<br/>pptx·docx·html·png·mp4·xlsx·zip → revisable]
+    B --> C[Armar objetivos de revisión<br/>build_bundles.py<br/>+ arrastre de re-entregas]
+    C --> D[1 revisor IA de contexto limpio<br/>por estudiante<br/>lee cada página · verifica fechas por web]
+    D --> E[Gate mecánico de equidad<br/>validate_review.py<br/>+ spot-checks de honestidad]
+    E --> F[Ensamblar + reconciliar<br/>assemble_results.py<br/>cruce de fechas por herramienta]
+    F --> G[Excel clasificado<br/>make_excel.py<br/>Ranking · Detalle · Meta]
+```
+
+- **Todo formato se revisa.** Un `.docx`, una captura o un video es una entrega — el
+  formato nunca es motivo para saltarse ni descalificar a un estudiante (regla dura de
+  equidad del skill).
+- **Las fechas de lanzamiento se verifican por web** contra anuncios oficiales;
+  herramientas con más de 4 meses → 1.0 automático, con banda fronteriza (3.5–4.5
+  meses) marcada para revisión humana.
+- **Rúbrica:** Prueba de concepto 50% · Análisis de impacto 25% · Comunicación 25%,
+  escala 1.0–5.0, calculada en un único lugar.
+- **Maquinaria anti-descuido:** validación mecánica por revisión (formatos estrictos de
+  campos, vocabulario cerrado de flags), spot-checks de honestidad contra las páginas
+  reales, manejo de entregas duplicadas con arrastre de evidencia, y reconciliación de
+  fechas entre estudiantes que presentaron la misma herramienta.
+- **Todo lo que ve el docente sale en español** — la clase se dicta en español.
+
+## Agnóstico al harness por diseño
+
+El skill habla en lenguaje de capacidades (ver `SKILL.md`); los adaptadores por
+plataforma lo traducen a herramientas concretas:
+
+| Tu harness agéntico | Adaptador |
+|---|---|
+| **Claude Code** (Claude) | [`references/claude-code.md`](references/claude-code.md) |
+| **Codex CLI** (GPT) | [`references/codex.md`](references/codex.md) |
+| **Antigravity** (Gemini) | [`references/antigravity.md`](references/antigravity.md) |
+| Cualquier otro con visión + búsqueda web | sigue la lista de capacidades de [`SKILL.md`](SKILL.md) |
+
+Los harnesses sin visión nativa de páginas PDF usan el rasterizador incluido
+(`scripts/pdf_to_images.py`, PyMuPDF).
+
+## Mapa del repositorio
+
+| Ruta | Qué es |
+|---|---|
+| `SKILL.md` | El skill — procedimiento, reglas de equidad, capacidades requeridas |
+| `scripts/local_list.py` | Inventario de carpeta local / Canvas / Drive Desktop (rutas largas seguras) |
+| `scripts/drive_list.py` · `drive_download.py` | Listado + descarga anónima de Drive compartido por enlace |
+| `scripts/prepare_materials.py` | Todo formato entregado → algo que el revisor puede VER |
+| `scripts/pdf_to_images.py` | PDF → PNGs por página (harnesses sin visión de PDF) |
+| `scripts/build_bundles.py` | Objetivos de revisión por estudiante + arrastre de re-entregas |
+| `scripts/validate_review.py` | El gate mecánico de equidad (fuente única de verdad) |
+| `scripts/assemble_results.py` | Fusión de dos pasadas + reconciliación por herramienta |
+| `scripts/convert_to_pdf.py` · `make_excel.py` | Diapositivas→PDF · Excel final |
+| `templates/` | Prompts del revisor (español): entrega simple + bundle multiformato |
+| `references/` | Adaptadores por plataforma |
+| `docs/specs/` | Planes de diseño y de corrida |
 
 ## Requisitos
 
-- Python 3.10+ con `openpyxl` y `pypdf` (`pip install -r requirements.txt`);
-  `pymupdf` solo para harnesses sin visión nativa de páginas PDF.
-- Backend de conversión: LibreOffice (`soffice`) o Microsoft Office (COM en Windows);
-  Chrome/Edge headless para HTML; `ffmpeg` para videos.
-- Para origen Drive: carpeta compartida como "cualquiera con el enlace".
+Python 3.10+ · `pip install -r requirements.txt` · backend diapositivas→PDF
+(LibreOffice u Office COM) · Chrome/Edge headless para HTML · `ffmpeg` para videos.
+En Windows: lee la sección MAX_PATH de `SKILL.md` antes que nada.
 
-## Nota para Windows (MAX_PATH)
+## Licencia
 
-Los nombres de carpeta de Canvas + nombres de archivo superan con frecuencia los 260
-caracteres. Los scripts incluidos aplican el prefijo `\\?\` en toda E/S propia y
-mantienen cortas las rutas generadas (raíz corta `%TEMP%\vtr-mat`), porque Chrome,
-ffmpeg y COM de Office no aceptan el prefijo. Si escribes un helper propio, replica el
-tratamiento `longpath()` — sin él, la E/S falla en silencio archivo por archivo y
-parece que "el estudiante no entregó".
+**[Licencia Académica Uniandes](LICENSE.md)** — código visible, no open source:
+
+- Cualquiera puede **ver, descargar, ejecutar y probar** el skill con fines
+  **académicos y no comerciales**.
+- **La modificación y las obras derivadas están reservadas a profesores, TAs y
+  personal de la Universidad de los Andes.**
+- Sin uso comercial; sin calificar estudiantes reales fuera de Uniandes sin
+  autorización escrita. Los datos de estudiantes jamás entran a este repositorio.
+
+---
+
+<div align="center">
+<sub>Hecho con cuidado para el equipo docente del MBA de Uniandes · Bogotá, Colombia 🇨🇴</sub>
+</div>

@@ -17,6 +17,10 @@ DONE or explicitly deferred with a reason.
 | R7 | Full **clean-ship** ritual (worktree, semgrep, named specialist review, evidence, PR, ledger) | active — branch `feat/harness-agnostic-v2` in own worktree |
 | R8 | **Full Spanish support** — the class is dictated in Spanish in every sense | pending (see item G) |
 | R9 | Keep all requests saved in a plan — miss nothing | this file |
+| R10 | Full documentation checkpoint — impeccable, beautiful docs | pending (item N) |
+| R11 | Repo branded **Universidad de los Andes** | pending (item O) |
+| R12 | Custom license: public repo, made as part of TA job for Uniandes; only Uniandes teachers/TAs/personnel may modify/improve; others download/test for academic purposes only. Recommend license type + adjust | pending (item P) |
+| R13 | **Merge and deploy when all is green**; quality bar: reliable to a Uniandes-MBA standard — authorization granted in-conversation | active |
 
 Standing constraints from earlier in the session: every student reviewed
 regardless of file format (fairness rule); vision-first, convert only what the
@@ -80,3 +84,16 @@ VERIFIED non-problems (recorded so nobody "fixes" them):
        folder `Vigilancia Tecnologica`, remove stale copy if any
 - [ ] M. clean-ship ledger line + final report (inventory: branch, worktree,
        PR, deliveries)
+- [ ] N. Documentation checkpoint (R10): README.md + README.es.md rewritten for
+       v2 (architecture, scripts table, per-platform quickstart, mermaid flow),
+       consistent with SKILL.md; badges; TOC
+- [ ] O. Uniandes branding (R11): title block, course context (Reto Integrador
+       1 – Tecnología de Información, MBA, Facultad de Administración), tasteful
+       text branding in both READMEs
+- [ ] P. License (R12): source-available custom license — public to view/
+       download/test for academic non-commercial purposes; modification
+       restricted to Uniandes teachers/TAs/staff; bilingual LICENSE.md; README
+       license sections; flag to Daniel that work-for-hire ownership should be
+       confirmed with Uniandes legal (not legal advice)
+- [ ] Q. Evidence addendum: mutation tests red/green log (reconciliation bug
+       found by mutation 1 and fixed: norm_tool 4→2 words)

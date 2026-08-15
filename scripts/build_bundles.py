@@ -59,6 +59,11 @@ def describe(items, use_images):
         suffix = f"\n   Nota: {it['note']}" if it.get("note") else ""
         if carried:
             suffix += f"\n   Nota: {carried}"
+        if it.get("truncated_from"):
+            avail = it.get("pages") or len(it.get("page_images") or [])
+            suffix += (f"\n   AVISO: material truncado — solo {avail} de "
+                       f"{it['truncated_from']} páginas disponibles; el resto "
+                       "NO fue revisado (flag REVISAR MANUALMENTE).")
         if k == "pdf" and use_images and it.get("page_images"):
             imgs = "\n".join(f"     - `{p}`" for p in it["page_images"])
             lines.append(
@@ -118,22 +123,42 @@ def main():
 
     by_fid = {e["folder_id"]: e for e in plan["folders"]}
 
-    # superseded folder -> authoritative folder (same canvas key)
+    # superseded folder -> authoritative folder (same canvas key).
+    # Primary source: the MACHINE field superseded_by_id emitted by
+    # local_list.py. Prose parsing is only a legacy fallback and warns loudly:
+    # a folder name containing an apostrophe breaks a quote-split silently,
+    # and a silent miss here means carried-forward evidence never reaches the
+    # reviewer AND the superseded folder gets a wasted duplicate review.
     superseded_of = {}
     for e in plan["folders"]:
-        if e["status"] == "no_deck" and "duplicada" in e.get("no_deck_reason", ""):
+        if e["status"] != "no_deck" or "duplicada" not in e.get("no_deck_reason", ""):
+            continue
+        auth_id = e.get("superseded_by_id")
+        if not auth_id:
             target_name = e["no_deck_reason"].split("'")
             target = target_name[1] if len(target_name) >= 2 else None
             auth = next((x for x in plan["folders"]
                          if x["folder_name"] == target), None)
-            if auth:
-                superseded_of[e["folder_id"]] = auth["folder_id"]
+            auth_id = auth["folder_id"] if auth else None
+            print(f"AVISO: plan sin campo superseded_by_id para "
+                  f"'{e['folder_name']}' — usando análisis de texto "
+                  f"({'resuelto' if auth_id else 'NO RESUELTO'})",
+                  file=sys.stderr)
+        if auth_id:
+            superseded_of[e["folder_id"]] = auth_id
+        else:
+            print(f"ERROR: entrega duplicada '{e['folder_name']}' sin carpeta "
+                  "autoritativa resoluble — el arrastre de evidencia NO "
+                  "ocurrirá y la carpeta podría revisarse dos veces. "
+                  "Corrige review_plan.json antes de continuar.",
+                  file=sys.stderr)
 
     def kinds_of(fid):
         m = materials.get(fid)
         return {it["kind"] for it in m["items"]} if m else set()
 
     bundles = []
+    missing_materials = []
     for e in plan["folders"]:
         fid = e["folder_id"]
         if fid in superseded_of:            # superseded folders get no grade
@@ -161,6 +186,17 @@ def main():
                         "EVIDENCIA DE ENVIO ANTERIOR INCLUIDA")
                     it["carried_from"] = sup_fid
                     carried.append(it)
+
+        should_have_materials = (
+            (e["status"] == "no_deck" and e.get("no_deck_files"))
+            or (e["status"] == "review" and e.get("evidence")))
+        if should_have_materials and m is None:
+            print(f"ERROR: review_plan requiere bundle para "
+                  f"'{e['student_name']}' pero materials.json no contiene su "
+                  f"carpeta ({fid}) — ¿corrió prepare_materials.py sobre "
+                  "ella? Este estudiante NO tendrá revisión hasta corregirlo.",
+                  file=sys.stderr)
+            missing_materials.append(e["student_name"])
 
         needs_bundle = bool(
             (e["status"] == "no_deck" and items)          # (a) no deck at all
@@ -199,7 +235,9 @@ def main():
     with open(os.path.join(work, "bundles.json"), "w", encoding="utf-8") as f:
         json.dump({"bundles": bundles}, f, ensure_ascii=False, indent=2)
 
-    print(f"bundles: {len(bundles)}")
+    print(f"bundles: {len(bundles)}"
+          + (f"  |  SIN MATERIALES (bloqueante): {len(missing_materials)}"
+             if missing_materials else ""))
     for b in bundles:
         cf = f" +{len(b['carried_forward'])} arrastrado(s)" if b["carried_forward"] else ""
         print(f"  {b['student_name'][:34]:34s} items={b['materials_expected']}"
