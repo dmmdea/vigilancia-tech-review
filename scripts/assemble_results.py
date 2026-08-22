@@ -513,11 +513,17 @@ def main():
                 # review, 2026-08-21)
                 primary, other = ((prev, c) if prev["verdict"] == "mas_vieja"
                                   else (c, prev))
-                checks_by_id[rid] = dict(primary, also=other)
+                # 'also' ACCUMULATES: a third/fourth opposite-direction
+                # check must not overwrite the one already kept
+                # (convergence review, 2026-08-21)
+                extra = (list(primary.get("also") or [])
+                         + list(other.get("also") or [])
+                         + [{k: x for k, x in other.items() if k != "also"}])
+                checks_by_id[rid] = dict(primary, also=extra)
                 print(f"AVISO: date_check duplicado para {rid} con evidencia "
                       "en AMBAS direcciones (más vieja y más nueva) — se "
-                      "conservan las dos para decisión humana.",
-                      file=sys.stderr)
+                      f"conservan todas ({1 + len(extra)} veredictos) para "
+                      "decisión humana.", file=sys.stderr)
                 continue
             if rank[v] <= rank[prev["verdict"]]:
                 print(f"AVISO: date_check duplicado para {rid} — se conserva "
@@ -536,7 +542,7 @@ def main():
         if not c0:
             continue
         applied_ids.add(row["id"])
-        for c in [c0] + ([c0["also"]] if c0.get("also") else []):
+        for c in [c0] + list(c0.get("also") or []):
             v = c.get("verdict")
             if v == "mas_vieja":
                 older_ids.add(row["id"])
