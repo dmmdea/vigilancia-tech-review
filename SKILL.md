@@ -10,8 +10,12 @@ IA de vanguardia** and delivers a ranked Excel for the human TAs. The skill neve
 the official grade — it produces evidence-cited candidate scores and a top-5 shortlist.
 
 **Rubric:** Prueba de concepto 50% · Análisis de impacto 25% · Comunicación 25%.
-Exclusion filter: tool launched **more than 4 months** before the run date → automatic
-1.0 (verified by web search, not by trusting the deck). General-purpose tools (ChatGPT,
+Exclusion filter: tool launched **more than 4 months** before the run date → DESCALIFICADA
+(verified by web search, not by trusting the deck). **DQ grade policy** (TA-team
+calibration, 2026-08-21): a disqualified row keeps its rubric grade visible (`Nota
+rúbrica`) and its `Nota final` is **capped at 3.0** by default — `--dq-policy=cap:3.0`
+in step 6; `fixed:N`, `rubric` (no penalty) and `legacy` (automatic 1.0) are available
+when the teaching team decides otherwise. General-purpose tools (ChatGPT,
 Gemini, Copilot, Claude…) are invalid unless the subject is a specific recently launched
 feature. Scale: 1.0–5.0.
 
@@ -247,29 +251,36 @@ The pilot shipped a top-5 row whose demonstrated capability was 5.7 months old:
 the reviewer NOTED the older date but anchored `age_months` to the new version
 label, and nothing re-checked the top. Now mandatory before the Excel:
 
-For **every top-8 candidate**, every row with `age_months` in 2.5–4.5, and
-every row whose notes mention an earlier version/feature: dispatch one
-fresh-context checker per row with `templates/date-check-prompt.md`
-(refutation framing — its job is to prove the capability is OLDER). Collect
-verdicts into `$WORK/date_checks.json`
+For **every top-8 candidate**, every row with `age_months` in 2.5–4.5,
+every row whose notes mention an earlier version/feature, **and every
+DISQUALIFIED row**: dispatch one fresh-context checker per row with
+`templates/date-check-prompt.md` (refutation framing — prove the capability
+is OLDER; for DQ rows it is BIDIRECTIONAL and also tries to prove the specific
+feature the student used is NEWER — in round 1 the TAs overturned 5 of 11
+DQs, mostly product-family dates applied to a newer feature). Fill
+`{{disqualified}}` with `true`/`false`. Collect verdicts into
+`$WORK/date_checks.json`
 (`{"checks": [{"row_id", "verdict", "older_date", "older_evidence_url",
-"older_capability", "notes"}]}`) and re-run `assemble_results.py` — verdicts
-become loud flags (`VERIFICAR FECHA` + `DISCREPANCIA FECHA` +
-`REVISAR MANUALMENTE` with the evidence URL); the pipeline never silently
-re-grades or disqualifies. A top-5 that survives this pass has earned it.
+"older_capability", "newer_date", "newer_evidence_url", "newer_capability",
+"notes"}]}`) and re-run `assemble_results.py` — verdicts become loud flags
+(`VERIFICAR FECHA` + `DISCREPANCIA FECHA` + `REVISAR MANUALMENTE` with the
+evidence URL; `mas_nueva` adds "la DESCALIFICACIÓN puede ser INCORRECTA");
+the pipeline never silently re-grades or un-disqualifies. A top-5 that
+survives this pass has earned it.
 
 ### 6. Generate the Excel
 
 ```bash
 cd "$WORK" && python "$SKILL_DIR/scripts/make_excel.py" results.json res.xlsx \
-  --listing=listing.json --listing=sub-listings/<id>.json ...
+  --listing=listing.json --listing=sub-listings/<id>.json ... --dq-policy=cap:3.0
 ```
 
 Pass EVERY listing JSON (main + each subfolder), with relative paths — 70+ absolute
 `--listing` args can blow the command-length limit. Write to a SHORT name
 (`res.xlsx`), then copy to the final `Resultados-Vigilancia-Tecnologica-<RUN_DATE>.xlsx`
 at delivery (a long name inside a deep `$WORK` hits MAX_PATH). The script computes the
-final grade (single source of truth: 0.50/0.25/0.25, DQ → 1.0) and fails (exit 2)
+final grade (single source of truth: 0.50/0.25/0.25 = `Nota rúbrica`; DQ rows get
+`Nota final` per `--dq-policy`, default cap at 3.0) and fails (exit 2)
 naming any listed entry with no row. Fix the missing rows; never work around the gate.
 Sheets: **Ranking**, **Detalle**, **Meta**.
 

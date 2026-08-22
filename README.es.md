@@ -55,6 +55,11 @@ flowchart LR
   reales, manejo de entregas duplicadas con arrastre de evidencia, y reconciliación de
   fechas entre estudiantes que presentaron la misma herramienta.
 - **Todo lo que ve el docente sale en español** — la clase se dicta en español.
+- **Política de nota para descalificadas configurable** (`make_excel.py --dq-policy`):
+  por defecto `cap:3.0` conserva visible la nota de rúbrica (`Nota rúbrica`) y limita la
+  final a 3.0 — calibración del equipo docente tras la primera ronda; `fixed:N`,
+  `rubric` y `legacy` (1.0 automático) disponibles. Las filas DQ reciben además una
+  re-verificación adversarial de fecha bidireccional.
 - **Estados más allá de calificado:** `REVISADO (ANEXO)` (archivo leído dentro
   de la revisión integral del estudiante), `REEMPLAZADA` (versión anterior o
   duplicado) — más columnas advisory `Indicio IA (1-5)` (señal de IA sin

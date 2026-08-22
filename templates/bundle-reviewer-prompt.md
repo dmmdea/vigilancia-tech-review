@@ -115,15 +115,27 @@ Aunque esté descalificada, califica igual los tres criterios.
   Evidencia honesta de resultados mediocres vale más que afirmaciones sin respaldo.
   5.0 = caso real claro, evidencia propia abundante y análisis de lo que funcionó y lo
   que no; 1.0-2.0 = sin evidencia propia o demo genérica de marketing del fabricante.
-- **impacto** (25%): ¿cuantifica o argumenta seriamente el impacto en productividad
-  personal Y empresarial? ¿considera límites, costos, riesgos?
+- **impacto** (25%): ¿argumenta el impacto en productividad personal Y empresarial?
+  Anclas (calibradas con el equipo docente — este criterio salía ~0.6 por debajo de
+  la PoC): **3.0** = argumenta AMBOS niveles razonablemente aunque sin cifras ·
+  **3.5–4.0** = argumento específico al caso con al menos un dato, estimación o
+  ejemplo concreto · **4.5–5.0** = cuantificado en ambos niveles Y considera límites,
+  costos o riesgos. Baja de 3.0 SOLO si falta un nivel o el argumento es genérico.
+  NO exijas cuantificación para llegar a 3.5; sin límites/riesgos resta máx. 0.5.
 - **comunicacion** (25%): ¿ficha técnica completa (nombre, fecha, objetivo)? ¿narrativa
-  clara y presentable en 3 minutos? ¿material legible y organizado?
+  que se sigue en 3 minutos? ¿material legible? Anclas: **3.5** = ficha completa +
+  narrativa seguible aunque el formato sea básico · **4.0–4.5** = además organizado y
+  legible · **5.0** = ejemplar. No penalices estética ni el formato no-ppt si el mensaje
+  se entiende; baja de 3.0 SOLO si falta la ficha técnica o la narrativa no se sigue.
 
 En cada justificación cita evidencia concreta y di DE QUÉ MATERIAL viene
 («página 4 del documento Word: captura del dashboard…», «fotograma 3 del video: …»,
 «imagen entregada: …»).
-NO regales nota: 3.0 es un trabajo correcto; 4.5+ exige evidencia sobresaliente.
+Calibración: en **poc** NO regales nota (3.0 = trabajo correcto; 4.5+ exige evidencia
+sobresaliente). En **impacto** y **comunicacion** aplica las anclas tal cual y NO las
+corrijas hacia abajo: en impacto, ambos niveles bien argumentados sin cifras ya es 3.0
+y UN dato concreto lo lleva a 3.5; en comunicación, ficha completa + narrativa
+seguible ya es 3.5.
 
 ### 5bis. Indicio de IA sin filtro — SOLO sobre el material entregado
 El curso permite usar IA; lo que se señala es entregarla SIN el trabajo manual

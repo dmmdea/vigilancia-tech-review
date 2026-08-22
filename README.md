@@ -55,6 +55,10 @@ flowchart LR
   submission handling with evidence carry-forward, and cross-student same-tool date
   reconciliation.
 - **Everything teacher-facing ships in Spanish** — the class runs in Spanish.
+- **DQ grade policy is configurable** (`make_excel.py --dq-policy`): default `cap:3.0`
+  keeps a disqualified student's rubric grade visible (`Nota rúbrica`) and caps the
+  final at 3.0 — the TA team's calibration after round 1; `fixed:N`, `rubric`, `legacy`
+  (automatic 1.0) available. DQ rows also get a bidirectional adversarial date re-check.
 - **Row states beyond graded:** `REVISADO (ANEXO)` (file read inside the
   student's integral review), `REEMPLAZADA` (older version/duplicate) — plus
   advisory columns `Indicio IA (1-5)` (unfiltered-AI signal, never part of the

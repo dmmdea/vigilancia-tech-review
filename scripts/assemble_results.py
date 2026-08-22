@@ -465,8 +465,9 @@ def main():
         v = unicodedata.normalize("NFKD", str(v or "").strip().lower())
         return "".join(ch for ch in v if not unicodedata.combining(ch))
 
-    VALID_VERDICTS = {"confirmada", "mas_vieja", "no_concluyente"}
+    VALID_VERDICTS = {"confirmada", "mas_vieja", "mas_nueva", "no_concluyente"}
     row_ids = {r.get("id") for r in results}
+    dq_ids = {r.get("id") for r in results if r.get("disqualified")}
     checks_by_id = {}
     for c in date_checks:
         rid = c.get("row_id")
@@ -487,48 +488,101 @@ def main():
                   "older_evidence_url — degradado a no_concluyente.",
                   file=sys.stderr)
             v = "no_concluyente"
+        if v == "mas_nueva" and not (c.get("newer_date")
+                                     and c.get("newer_evidence_url")):
+            print(f"AVISO: date_check {rid} dice mas_nueva SIN newer_date/"
+                  "newer_evidence_url — degradado a no_concluyente.",
+                  file=sys.stderr)
+            v = "no_concluyente"
+        if v == "mas_nueva" and rid not in dq_ids:
+            # the prompt restricts mas_nueva to DQ rows; back it mechanically
+            # so a non-DQ row never gets "la DESCALIFICACIÓN puede ser
+            # INCORRECTA" (code review, 2026-08-21)
+            print(f"AVISO: date_check {rid} dice mas_nueva pero la fila NO "
+                  "está descalificada — degradado a no_concluyente.",
+                  file=sys.stderr)
+            v = "no_concluyente"
         c = dict(c, verdict=v)
         prev = checks_by_id.get(rid)
         if prev:
-            # duplicate: the WORST verdict survives (mas_vieja > no_concl > conf)
-            rank = {"mas_vieja": 2, "no_concluyente": 1, "confirmada": 0}
-            print(f"AVISO: date_check duplicado para {rid} — se conserva el "
-                  "veredicto más severo.", file=sys.stderr)
-            if rank[v] <= rank[prev["verdict"]]:
+            rank = {"mas_vieja": 2, "mas_nueva": 2, "no_concluyente": 1,
+                    "confirmada": 0}
+            if {v, prev["verdict"]} == {"mas_vieja", "mas_nueva"}:
+                # opposite-direction evidence for ONE row: both actionable,
+                # a human needs BOTH — never drop either (silent-failure
+                # review, 2026-08-21)
+                primary, other = ((prev, c) if prev["verdict"] == "mas_vieja"
+                                  else (c, prev))
+                # 'also' ACCUMULATES: a third/fourth opposite-direction
+                # check must not overwrite the one already kept
+                # (convergence review, 2026-08-21)
+                extra = (list(primary.get("also") or [])
+                         + list(other.get("also") or [])
+                         + [{k: x for k, x in other.items() if k != "also"}])
+                checks_by_id[rid] = dict(primary, also=extra)
+                print(f"AVISO: date_check duplicado para {rid} con evidencia "
+                      "en AMBAS direcciones (más vieja y más nueva) — se "
+                      f"conservan todas ({1 + len(extra)} veredictos) para "
+                      "decisión humana.", file=sys.stderr)
                 continue
+            if rank[v] <= rank[prev["verdict"]]:
+                print(f"AVISO: date_check duplicado para {rid} — se conserva "
+                      f"'{prev['verdict']}' y se descarta '{v}'.",
+                      file=sys.stderr)
+                continue
+            print(f"AVISO: date_check duplicado para {rid} — '{v}' reemplaza "
+                  f"a '{prev['verdict']}' (más accionable).", file=sys.stderr)
+            c = dict(c, also=prev.get("also"))
         checks_by_id[rid] = c
     older_ids = set()
+    newer_ids = set()
     applied_ids = set()   # count CHECKS applied, not rows — two rows sharing
     for row in results:   # an id must not double-count (convergence minor)
-        c = checks_by_id.get(row.get("id"))
-        if not c:
+        c0 = checks_by_id.get(row.get("id"))
+        if not c0:
             continue
         applied_ids.add(row["id"])
-        v = c.get("verdict")
-        if v == "mas_vieja":
-            older_ids.add(row["id"])
-            for fl in ("VERIFICAR FECHA", "DISCREPANCIA FECHA",
-                       "REVISAR MANUALMENTE"):
-                if fl not in row["flags"]:
-                    row["flags"].append(fl)
-            extra = (f"VERIFICACIÓN ADVERSARIAL DE FECHA: la capacidad "
-                     f"demostrada ya existía desde {c.get('older_date', '?')} "
-                     f"({c.get('older_capability', '')}) — evidencia: "
-                     f"{c.get('older_evidence_url', '')}. La fila puede estar "
-                     "por FUERA de la ventana de 4 meses; decisión humana "
-                     "requerida.")
-            key = "evidence_notes" if row["status"] == "revisado" else "status_reason"
-            row[key] = ((row.get(key) or "") + " | " + extra).strip(" |")
-        elif v == "no_concluyente":
-            if "VERIFICAR FECHA" not in row["flags"]:
-                row["flags"].append("VERIFICAR FECHA")
-            key = "evidence_notes" if row["status"] == "revisado" else "status_reason"
-            row[key] = ((row.get(key) or "") + " | Verificación adversarial "
-                        "de fecha NO concluyente: "
-                        + (c.get("notes") or "")).strip(" |")
+        for c in [c0] + list(c0.get("also") or []):
+            v = c.get("verdict")
+            if v == "mas_vieja":
+                older_ids.add(row["id"])
+                for fl in ("VERIFICAR FECHA", "DISCREPANCIA FECHA",
+                           "REVISAR MANUALMENTE"):
+                    if fl not in row["flags"]:
+                        row["flags"].append(fl)
+                extra = (f"VERIFICACIÓN ADVERSARIAL DE FECHA: la capacidad "
+                         f"demostrada ya existía desde {c.get('older_date', '?')} "
+                         f"({c.get('older_capability', '')}) — evidencia: "
+                         f"{c.get('older_evidence_url', '')}. La fila puede estar "
+                         "por FUERA de la ventana de 4 meses; decisión humana "
+                         "requerida.")
+                key = "evidence_notes" if row["status"] == "revisado" else "status_reason"
+                row[key] = ((row.get(key) or "") + " | " + extra).strip(" |")
+            elif v == "mas_nueva":
+                newer_ids.add(row["id"])
+                for fl in ("VERIFICAR FECHA", "REVISAR MANUALMENTE"):
+                    if fl not in row["flags"]:
+                        row["flags"].append(fl)
+                extra = (f"VERIFICACIÓN ADVERSARIAL DE FECHA (dirección opuesta): "
+                         f"hay evidencia de que la función usada es MÁS NUEVA — "
+                         f"{c.get('newer_capability', '')} lanzada "
+                         f"{c.get('newer_date', '?')}, fuente "
+                         f"{c.get('newer_evidence_url', '')}. La DESCALIFICACIÓN "
+                         "puede ser INCORRECTA; decisión humana requerida (el "
+                         "ensamblador nunca des-descalifica).")
+                key = "evidence_notes" if row["status"] == "revisado" else "status_reason"
+                row[key] = ((row.get(key) or "") + " | " + extra).strip(" |")
+            elif v == "no_concluyente":
+                if "VERIFICAR FECHA" not in row["flags"]:
+                    row["flags"].append("VERIFICAR FECHA")
+                key = "evidence_notes" if row["status"] == "revisado" else "status_reason"
+                row[key] = ((row.get(key) or "") + " | Verificación adversarial "
+                            "de fecha NO concluyente: "
+                            + (c.get("notes") or "")).strip(" |")
     if date_checks:
         print(f"date_checks: {len(date_checks)} recibidos, {len(applied_ids)} "
-              f"aplicados ({len(older_ids)} con evidencia de fecha más vieja)")
+              f"aplicados ({len(older_ids)} con evidencia de fecha más vieja, "
+              f"{len(newer_ids)} con evidencia de fecha más nueva)")
 
     # ---- same-tool cross-student reconciliation ---------------------------
     groups = {}
