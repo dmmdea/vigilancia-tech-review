@@ -270,10 +270,18 @@ def content_key(path):
     h = hashlib.sha256()
     h.update(str(size).encode())
     chunk = 1 << 20
+    whole = 32 << 20          # hash small files ENTIRELY (audio usually is)
     try:
         with open(longpath(path), "rb") as f:
-            h.update(f.read(chunk))
-            if size > 2 * chunk:
+            if size <= whole:
+                for block in iter(lambda: f.read(1 << 20), b""):
+                    h.update(block)
+            else:
+                # head + middle + tail, with no unhashed gap between head
+                # and tail for anything just over the head size
+                h.update(f.read(chunk))
+                f.seek(size // 2)
+                h.update(f.read(chunk))
                 f.seek(-chunk, os.SEEK_END)
                 h.update(f.read(chunk))
     except OSError:
@@ -525,6 +533,14 @@ def main():
     out_path = os.path.join(work, "materials.json")
     materials = {}
     prev_materials = {}
+    if only and not os.path.exists(out_path):
+        # --only writes a MERGE of this run into the existing file; with no
+        # file to merge into, the result would contain only the folders we
+        # reprocessed and silently lose every other student.
+        print(f"ERROR: --only requiere un {out_path} previo con el que "
+              "fusionar; no existe. Corre primero SIN --only para generar "
+              "todas las carpetas.", file=sys.stderr)
+        sys.exit(2)
     if os.path.exists(out_path):
         try:
             with open(out_path, encoding="utf-8") as f:
@@ -593,13 +609,26 @@ def main():
         # a stale transcript to a different recording — and the item note
         # tells the reviewer to grade by that transcript.
         prev_by_content = {}
+        # records written before content fingerprinting exist in the wild;
+        # they can only be matched by name+position, which we do — but we
+        # must SAY that identity could not be verified instead of either
+        # discarding the operator's work or pretending it was checked
+        legacy_by_label = {}
         for it in prev_media:
             ck = it.get("content_key")
             if ck:
                 prev_by_content.setdefault(ck, []).append(
                     (it.get("label"), it["transcript_path"]))
+            else:
+                legacy_by_label.setdefault(
+                    (it.get("kind"), it.get("label")), []).append(
+                        it["transcript_path"])
+        seen_keys = set(prev_by_content)     # BEFORE any pop
         carried = 0
+        legacy_carried = []
         stale = []
+        shared = []
+        legacy_seen = {}
         for it in media:
             if it.get("transcript_path"):
                 continue
@@ -614,15 +643,38 @@ def main():
                           f"cambio de nombre ('{old_label}' -> "
                           f"'{it.get('label')}'): el contenido es idéntico.",
                           file=sys.stderr)
-            else:
+                continue
+            lk = (it["kind"], it.get("label"))
+            legacy = legacy_by_label.get(lk)
+            if legacy:
+                nth = legacy_seen.get(lk, 0)
+                legacy_seen[lk] = nth + 1
+                if nth < len(legacy):
+                    it["transcript_path"] = legacy[nth]
+                    legacy_carried.append(it.get("label"))
+                    continue
+            if ck and ck in seen_keys:
+                # the content DID exist before; its transcript was already
+                # handed to an identical twin in this same folder
+                shared.append(it.get("label"))
+            elif any(pm.get("label") == it.get("label") for pm in prev_media):
                 # same name, different bytes = a NEW recording
-                prev_same_label = [p for p in prev_media
-                                   if p.get("label") == it.get("label")]
-                if prev_same_label:
-                    stale.append(it.get("label"))
+                stale.append(it.get("label"))
         if carried:
             print(f"NOTA: {carried} transcripción(es) conservada(s) de la "
                   f"corrida anterior en {fid} (contenido idéntico).",
+                  file=sys.stderr)
+        if legacy_carried:
+            print(f"AVISO: {len(legacy_carried)} transcripción(es) en {fid} "
+                  "provienen de un registro ANTERIOR a la huella de "
+                  "contenido, así que se conservaron por NOMBRE y no se "
+                  f"pudo verificar que el archivo sea el mismo: "
+                  f"{legacy_carried}. Si el estudiante reemplazó el archivo, "
+                  "vuelve a transcribirlo.", file=sys.stderr)
+        for label in shared:
+            print(f"NOTA: '{label}' en {fid} es idéntico a otro archivo de la "
+                  "misma carpeta que ya tomó la única transcripción "
+                  "disponible; transcríbelo aparte si necesitas una propia.",
                   file=sys.stderr)
         for label in stale:
             print(f"ATENCION: '{label}' en {fid} tenía transcripción en la "
