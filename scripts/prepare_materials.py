@@ -497,10 +497,14 @@ def main():
 
     out_path = os.path.join(work, "materials.json")
     materials = {}
-    if only and os.path.exists(out_path):
-        # Load-and-merge: a filtered re-run must never drop skipped folders.
+    prev_materials = {}
+    if os.path.exists(out_path):
         with open(out_path, encoding="utf-8") as f:
-            materials = json.load(f)
+            prev_materials = json.load(f)
+        if only:
+            # Load-and-merge: a filtered re-run must never drop skipped
+            # folders.
+            materials = dict(prev_materials)
 
     plan_fids = {e["folder_id"] for e in plan["folders"]}
     for k in transcripts:
@@ -531,6 +535,35 @@ def main():
                         it["note"] = ((it.get("note", "") + " | ") if it.get("note")
                                       else "") + f"rasterización falló: {err}"
         media = [it for it in items if it["kind"] in MEDIA_KINDS]
+
+        # Carry transcripts forward. Every re-run rebuilds items from
+        # scratch with transcript_path=None, so WITHOUT this an ordinary
+        # re-run (a resubmitted file, a late folder, a re-rasterize) would
+        # silently un-attach a transcript the operator already produced —
+        # and a graded spoken submission would revert to unreviewable with
+        # no error at all. Explicit --transcript below still overrides.
+        prev_media = [it for it in
+                      ((prev_materials.get(fid) or {}).get("items") or [])
+                      if it.get("kind") in MEDIA_KINDS
+                      and it.get("transcript_path")]
+        prev_by_label = {}
+        for it in prev_media:
+            prev_by_label.setdefault((it["kind"], it.get("label")),
+                                     []).append(it["transcript_path"])
+        seen_labels = {}
+        carried = 0
+        for it in media:
+            key = (it["kind"], it.get("label"))
+            nth = seen_labels.get(key, 0)
+            seen_labels[key] = nth + 1
+            candidates = prev_by_label.get(key) or []
+            if nth < len(candidates) and not it.get("transcript_path"):
+                it["transcript_path"] = candidates[nth]
+                carried += 1
+        if carried:
+            print(f"NOTA: {carried} transcripción(es) conservada(s) de la "
+                  f"corrida anterior en {fid}.", file=sys.stderr)
+
         for idx, tpath in transcripts.get(fid, []):
             if idx is not None:
                 if idx > len(media):
@@ -553,6 +586,15 @@ def main():
                       f"tiene {len(media)} items de audio/video ({listing}) "
                       "\u2014 NO se adjunto nada. Usa la forma indexada "
                       f"--transcript={fid}#<n>=<archivo>.", file=sys.stderr)
+        # A transcribed item must not keep carrying the "sin transcripción"
+        # note: build_bundles appends it verbatim under the block that just
+        # told the reviewer to READ the transcript, and the contradiction
+        # invites a wrong EVIDENCIA NO LEGIBLE flag.
+        for it in items:
+            if it["kind"] == "audio" and it.get("transcript_path"):
+                it["note"] = ("audio con transcripción adjunta: evalúa por la "
+                              "transcripción, no por el archivo de sonido")
+
         materials[fid] = {"folder_name": e["folder_name"],
                           "student_name": e["student_name"],
                           "status": e["status"], "items": items}

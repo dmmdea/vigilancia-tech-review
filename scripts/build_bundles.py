@@ -127,11 +127,20 @@ def describe(items, use_images):
         elif k == "audio":
             tp = it.get("transcript_path")
             dur = it.get("duration_sec")
-            mb = (it.get("size_bytes") or 0) / 1e6
+            size = it.get("size_bytes")
             dtxt = (f" — duración {dur:.0f}s aprox" if dur
                     else " — duración desconocida")
-            head = f"{n}. [AUDIO] «{label}»{dtxt}"
-            head += f", {mb:.1f} MB.\n" if mb else ".\n"
+            # 0 bytes is KNOWN-broken, not unknown: say so instead of
+            # rendering it the same as a size we could not read.
+            if size is None:
+                stxt = ", tamaño desconocido.\n"
+            elif size == 0:
+                stxt = (", ARCHIVO VACÍO (0 bytes): la subida falló, no hay "
+                        "nada que evaluar en él — repórtalo con el flag "
+                        "EVIDENCIA NO LEGIBLE.\n")
+            else:
+                stxt = f", {size / 1e6:.1f} MB.\n"
+            head = f"{n}. [AUDIO] «{label}»{dtxt}" + stxt
             if tp:
                 lines.append(
                     head
