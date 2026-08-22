@@ -124,6 +124,65 @@ def describe(items, use_images):
                 f"   a) Fotogramas (ábrelos TODOS; son imágenes):\n{flist}\n"
                 + (f"   b) Transcripción del audio: `{tp}`\n" if tp else "")
                 + "   Evalúa el video con esa evidencia combinada." + suffix)
+        elif k == "audio":
+            tp = it.get("transcript_path")
+            dur = it.get("duration_sec")
+            size = it.get("size_bytes")
+            dtxt = (f" — duración {dur:.0f}s aprox" if dur
+                    else " — duración desconocida")
+            # 0 bytes is KNOWN-broken, not unknown: say so instead of
+            # rendering it the same as a size we could not read.
+            if size is None:
+                stxt = ", tamaño desconocido.\n"
+            elif size == 0:
+                stxt = (", ARCHIVO VACÍO (0 bytes): la subida falló, no hay "
+                        "nada que evaluar en él — repórtalo con el flag "
+                        "EVIDENCIA NO LEGIBLE.\n")
+            else:
+                stxt = f", {size / 1e6:.1f} MB.\n"
+            head = f"{n}. [AUDIO] «{label}»{dtxt}" + stxt
+            if size == 0:
+                # nothing to read and nothing to credit: a 0-byte upload is
+                # broken, so the two-readings choice below must not apply
+                lines.append(
+                    head
+                    + "   El archivo está VACÍO: no contiene audio de ningún "
+                      "tipo, así que NO puede sustentar la PoC ni contar "
+                      "como evidencia propia (tampoco si el resto de la "
+                      "entrega afirma que es la salida de la herramienta). "
+                      "Repórtalo con EVIDENCIA NO LEGIBLE y dilo en "
+                      "evidence_notes."
+                    + suffix)
+            elif tp:
+                lines.append(
+                    head
+                    + "   No puedes escuchar el audio, pero SÍ tienes su "
+                      f"transcripción COMPLETA: `{tp}`\n"
+                      "   Léela entera y evalúa con ella. Si la entrega es "
+                      "hablada, la ficha técnica y la PoV están en lo que "
+                      "DICE, no en diapositivas: no la castigues por no ser "
+                      "un .pptx.\n"
+                      "   Si la transcripción viene vacía o sin sentido, el "
+                      "audio probablemente NO es habla (ver abajo)."
+                    + suffix)
+            else:
+                lines.append(
+                    head
+                    + "   NO hay transcripción y no puedes escucharlo. Dos "
+                      "lecturas, y debes elegir la que la evidencia sostenga:\n"
+                      "   a) Si el resto de la entrega indica que este archivo "
+                      "es la SALIDA de la herramienta evaluada (música, voz "
+                      "o audio GENERADO por ella), entonces el archivo ES "
+                      "evidencia propia: su existencia, formato y duración "
+                      "cuentan a favor de la PoC. Dilo así en la "
+                      "justificación, citando dónde lo sustenta el resto del "
+                      "material.\n"
+                      "   b) Si parece una presentación HABLADA (el estudiante "
+                      "narra su trabajo), NO puedes calificar su contenido: "
+                      "marca el flag EVIDENCIA NO LEGIBLE y dilo en "
+                      "evidence_notes.\n"
+                      "   En ningún caso inventes lo que se oye."
+                    + suffix)
         elif k == "error":
             lines.append(
                 f"{n}. [NO LEGIBLE] «{label}» — {it.get('note', '')}\n"
@@ -288,6 +347,10 @@ def main():
                 if it["kind"] == "pdf"
                 else len(it.get("frames") or []) if it["kind"] == "video"
                 else 1 if it["kind"] in ("image", "text")
+                # audio counts ONLY once transcribed: nobody can be asked to
+                # cite a line from a file no reviewer could hear
+                else 1 if (it["kind"] == "audio"
+                           and it.get("transcript_path"))
                 else 0
                 for it in items),
             "was_no_deck": was_no_deck,

@@ -33,6 +33,7 @@ Usage:
 import json
 import os
 import re
+import unicodedata
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -320,7 +321,13 @@ def main():
             # "SÍ fue leído" may only be asserted for files the bundle
             # actually LISTED — anything else is a false certification that
             # suppresses the human follow-up (finding 4, 2026-08-15 review).
-            listed = set(bdef.get("material_labels") or [])
+            # NFC-normalize both sides: zip-extracted names are often NFD
+            # while the reviewer echoes NFC, and a byte-compare would call a
+            # file "not reviewed" that WAS read (2026-08-21 run)
+            def _nfc(x):
+                return unicodedata.normalize("NFC", str(x))
+
+            listed = {_nfc(x) for x in (bdef.get("material_labels") or [])}
             # a .zip container whose EXTRACTED children were listed (labels
             # "container :: inner") counts as read — the contents are the
             # submission, the container is just packaging
@@ -331,12 +338,12 @@ def main():
             for fr in files:
                 if fr is primary:
                     continue
-                if fr["name"] in listed and review_ok:
+                if _nfc(fr["name"]) in listed and review_ok:
                     no_rev(fr, "leído como anexo dentro de la revisión "
                                f"integral de '{primary['name']}' — la nota "
                                "del estudiante está en esa fila.",
                            student=e["student_name"], status="revisado_anexo")
-                elif fr["name"] in listed:
+                elif _nfc(fr["name"]) in listed:
                     no_rev(fr, "material listado en una revisión integral que "
                                "quedó incompleta — revisar manualmente junto "
                                f"con '{primary['name']}'.",
@@ -459,8 +466,6 @@ def main():
     # The checker can prove a capability is older than the accepted date; the
     # pipeline surfaces that loudly but never silently re-grades or DQs —
     # humans decide (same never-edit-verdicts rule as everywhere else).
-    import unicodedata
-
     def _norm_verdict(v):
         v = unicodedata.normalize("NFKD", str(v or "").strip().lower())
         return "".join(ch for ch in v if not unicodedata.combining(ch))

@@ -13,7 +13,7 @@ actual tool list over this table when they disagree — harness tools evolve.
 | Structured JSON back from reviewers | `Workflow` `schema:` option enforces it at the tool layer; with the plain `Agent` tool, instruct "SOLO JSON" and parse — then ALWAYS run `scripts/validate_review.py` either way (schema enforcement checks shape, not the fairness rules) |
 | Retry-once on gate failure | re-dispatch with the validator's `problems` list appended to the prompt |
 | Office/HTML/video conversion backends | `Bash`/`PowerShell` tools drive PowerPoint/Word COM (Windows), LibreOffice, Chrome headless, ffmpeg — `prepare_materials.py` autodetects |
-| Audio transcription for videos | a local whisper via MCP if configured (e.g. `offload_transcribe`); else frames alone still work — note the missing transcript in the bundle |
+| Audio transcription (video AND standalone audio) | `offload_transcribe` (local whisper, free) on the item's `video_path`/`audio_path`, then `--transcript=<folder_id>#<n>=<text_path>`. For video, frames alone still work; for **audio there is no fallback** — untranscribed speech is unreviewable. An empty/nonsense transcript usually means the audio is non-speech (the tool's generated output), which the bundle already handles. |
 
 Notes:
 - Windows: mind MAX_PATH (see SKILL.md) — the bundled scripts handle it; keep

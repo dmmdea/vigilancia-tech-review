@@ -47,6 +47,7 @@ normalization) · 1 = usage · 2 = review must be retried/rejected.
 import json
 import re
 import sys
+import unicodedata
 
 for _s in (sys.stdout, sys.stderr):
     if _s in (sys.__stdout__, sys.__stderr__) and hasattr(_s, "reconfigure"):
@@ -167,7 +168,13 @@ def normalize_review(r, expect_pages=None, expect_materials=None,
                         f"totales ({expect_pages})")
     if expect_materials is not None:
         def bare(x):
-            return str(x).strip().strip("«»\"'")
+            # Unicode-normalize: a filename coming out of a .zip is often
+            # NFD ("tecnolo" + combining acute) while the reviewer echoes
+            # NFC. Byte-comparing them fails a CORRECT review of any
+            # accented Spanish filename, and a repeated failure downgrades
+            # the student to NO REVISADO (2026-08-21 run).
+            return unicodedata.normalize(
+                "NFC", str(x).strip().strip("«»\"'"))
         seen = {bare(m) for m in (r.get("materials_reviewed") or [])}
         missing = [m for m in expect_materials if bare(m) not in seen]
         if missing:
@@ -307,7 +314,18 @@ def main():
     expect_materials = None
     out_path = None
     require_extended = "--require-extended" in sys.argv[1:]
+    KNOWN = ("--expect-pages=", "--expect-materials=", "--normalized-out=",
+             "--require-extended")
     for a in sys.argv[1:]:
+        if a.startswith("--") and not a.startswith(KNOWN):
+            # A typo'd flag must never silently DISABLE a fairness check —
+            # an ignored --pages-total once let 38 deck reviews through with
+            # no page-coverage check at all (2026-08-21 run).
+            print(json.dumps({"ok": False, "problems": [
+                f"opción desconocida: {a} — ¿quisiste decir "
+                "--expect-pages=N o --expect-materials=lbl1|lbl2?"],
+                "moved_to_observations": []}, ensure_ascii=False))
+            sys.exit(1)
         if a.startswith("--expect-pages="):
             expect_pages = int(a.split("=", 1)[1])
         elif a.startswith("--expect-materials="):

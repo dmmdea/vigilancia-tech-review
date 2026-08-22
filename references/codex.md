@@ -70,7 +70,7 @@ exceptions.
 | Web search | `-c tools.web_search=true` (verified). If your environment blocks it, reviews must return `verification_confidence: "baja"` (age null, flag VERIFICAR FECHA) and the operator is told dates were NOT verified. |
 | Structured JSON | `--output-schema` + `-o` (verified) — then `validate_review.py` for the fairness rules. |
 | Conversion backends | run `prepare_materials.py` OUTSIDE the sandbox (orchestrator side); Office COM / Chrome / ffmpeg need real system access that `read-only` reviewers don't get and don't need. |
-| Audio transcription | any local whisper CLI, orchestrator side; else frames alone, noting the missing transcript. |
+| Audio transcription | any local whisper CLI, orchestrator side, then `--transcript=<folder_id>#<n>=<file.txt>`. Video degrades to frames; **standalone audio does not degrade** — without a transcript the reviewer flags EVIDENCIA NO LEGIBLE unless the file is clearly the evaluated tool's own generated output. |
 
 Notes:
 - **The fairness gate is `validate_review.py`, not the harness** — run it on
