@@ -644,6 +644,14 @@ def main():
                           f"'{it.get('label')}'): el contenido es idéntico.",
                           file=sys.stderr)
                 continue
+            if ck and ck in seen_keys:
+                # VERIFIED knowledge outranks name-only guessing, so this
+                # test comes BEFORE the legacy branch: we know this exact
+                # content's transcript already went to an identical twin in
+                # this folder, so handing this item a same-named legacy
+                # transcript would attach text from an unrelated recording.
+                shared.append(it.get("label"))
+                continue
             lk = (it["kind"], it.get("label"))
             legacy = legacy_by_label.get(lk)
             if legacy:
@@ -653,11 +661,7 @@ def main():
                     it["transcript_path"] = legacy[nth]
                     legacy_carried.append(it.get("label"))
                     continue
-            if ck and ck in seen_keys:
-                # the content DID exist before; its transcript was already
-                # handed to an identical twin in this same folder
-                shared.append(it.get("label"))
-            elif any(pm.get("label") == it.get("label") for pm in prev_media):
+            if any(pm.get("label") == it.get("label") for pm in prev_media):
                 # same name, different bytes = a NEW recording
                 stale.append(it.get("label"))
         if carried:
