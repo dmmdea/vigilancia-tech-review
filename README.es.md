@@ -55,6 +55,11 @@ flowchart LR
   reales, manejo de entregas duplicadas con arrastre de evidencia, y reconciliación de
   fechas entre estudiantes que presentaron la misma herramienta.
 - **Todo lo que ve el docente sale en español** — la clase se dicta en español.
+- **Las entregas en audio son de primera clase**: `.mp3/.wav/.m4a/…` obtienen
+  duración y transcripción opcional (`--transcript=<folder_id>#<n>=<archivo>`,
+  indexada para que una carpeta con varias pistas nunca se cruce). El habla sin
+  transcribir se marca, nunca se adivina; un audio NO hablado generado por la
+  herramienta evaluada cuenta como evidencia propia del estudiante.
 - **Política de nota para descalificadas configurable** (`make_excel.py --dq-policy`):
   por defecto `cap:3.0` conserva visible la nota de rúbrica (`Nota rúbrica`) y limita la
   final a 3.0 — calibración del equipo docente tras la primera ronda; `fixed:N`,

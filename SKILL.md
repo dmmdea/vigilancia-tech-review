@@ -156,12 +156,33 @@ where the harness's file tool cannot open the format (never "convert" a PNG):
 | `.png .jpg …` | passthrough | vision reads images directly |
 | `.xlsx .xls .csv` | `.txt` cell dump | data reads better as data |
 | `.mp4 .mov …` | keyframes (+ transcript) | the reviewer's own vision judges the frames |
+| `.mp3 .wav .m4a …` | duration/size + optional transcript | **no image to look at** — see the audio rule below |
 | `.zip` | extracted, contents re-routed | — |
 | `.py .txt .md` | passthrough | text |
 
-Writes `materials.json`. It prints any video lacking a transcript; transcribe those
-(a local whisper is ideal — mechanical work) and re-run with
-`--transcript=<folder_id>=<file.txt>`. Re-runs with `--only=` merge, never clobber.
+Writes `materials.json`. It prints any video or audio lacking a transcript;
+transcribe those (a local whisper is ideal — mechanical work) and re-run with
+`--transcript=<folder_id>#<n>=<file.txt>`. Re-runs with `--only=` merge, never clobber.
+
+**Audio rule (an audio file has no frames — you cannot "look" at it).** Two kinds
+arrive and they are graded differently, so never collapse them:
+1. **Spoken submission or narration** → it is unreviewable until transcribed.
+   Transcribe it (Claude Code: `offload_transcribe`; others: a local whisper CLI —
+   see your adapter) and attach with `--transcript`. Without a transcript the
+   reviewer is instructed to flag `EVIDENCIA NO LEGIBLE`, never to guess.
+2. **Non-speech artifact produced BY the tool under review** (music/voice/sound
+   generation — e.g. a student presenting a music model and submitting the tracks
+   it generated). A transcript is meaningless here; the file itself is the
+   student's own evidence and the bundle says so. A local whisper returning empty
+   or nonsense is the normal signal for this case, not a failure.
+The script never decides which is which — the reviewer does, from the rest of the
+submission, and the bundle spells out both readings.
+
+**One folder, several media files:** `--transcript=<folder_id>=<file>` attaches only
+when the folder has exactly ONE audio/video item. With more it REFUSES and prints the
+indexed handles (`<folder_id>#1`, `#2`, …) — attaching a transcript to the wrong
+track would put words into a file nobody read. This is not hypothetical: a real
+submission carried a deck plus three generated `.mp3` tracks.
 Fix every `ERROR` item it reports before moving on — each one is a student at risk of
 losing credit for evidence they did submit.
 

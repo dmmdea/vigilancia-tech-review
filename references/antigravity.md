@@ -32,7 +32,7 @@ Operational notes from that run:
 | Web search | the browser/search subsystem. If unavailable in your session, set `verification_confidence: "baja"` everywhere, flag VERIFICAR FECHA, and tell the operator dates were NOT verified. |
 | Structured JSON | No schema enforcement — instruct "SOLO JSON", parse, and run `scripts/validate_review.py`; exit 2 → one re-invoke with the problems list. |
 | Conversion backends | `run_command` drives LibreOffice / Office COM / Chrome / ffmpeg; `prepare_materials.py` autodetects. |
-| Audio transcription | any local whisper CLI via `run_command`; else frames alone, noting the missing transcript. |
+| Audio transcription | any local whisper CLI via `run_command`, then `--transcript=<folder_id>#<n>=<file.txt>`. Video degrades to frames; **standalone audio does not degrade** — without a transcript the reviewer flags EVIDENCIA NO LEGIBLE unless the file is clearly the evaluated tool's own generated output. |
 
 Notes:
 - The fairness gate is `validate_review.py`, not the harness: run it on every
