@@ -157,12 +157,9 @@ def normalize(r: dict) -> None:
         imp = float(s["impacto"])
         com = float(s["comunicacion"])
     except (KeyError, TypeError, ValueError):
-        if dq and DQ_POLICY[0] in ("fixed", "legacy"):
-            # the policy value does not depend on the rubric — the row can
-            # still carry a grade, but a human must see the missing scores
-            r["_final"] = apply_dq_policy(0.0)
-            r["flags"].append("REVISAR MANUALMENTE")
-            return
+        # regardless of policy: a DQ row with no usable scores was never
+        # actually reviewed — 'fixed'/'legacy' must not fabricate a grade
+        # for it (silent-failure review, 2026-08-21); humans assign it
         r["status"] = "no_revisado"
         r["status_reason"] = "puntajes ausentes o inválidos en la revisión"
         r["flags"].append("REVISAR MANUALMENTE")

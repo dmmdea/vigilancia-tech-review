@@ -132,8 +132,10 @@ En cada justificación cita evidencia concreta y di DE QUÉ MATERIAL viene
 («página 4 del documento Word: captura del dashboard…», «fotograma 3 del video: …»,
 «imagen entregada: …»).
 Calibración: en **poc** NO regales nota (3.0 = trabajo correcto; 4.5+ exige evidencia
-sobresaliente). En **impacto** y **comunicacion** aplica las anclas tal cual: un
-trabajo correcto en esos dos criterios es 3.5, no 3.0.
+sobresaliente). En **impacto** y **comunicacion** aplica las anclas tal cual y NO las
+corrijas hacia abajo: en impacto, ambos niveles bien argumentados sin cifras ya es 3.0
+y UN dato concreto lo lleva a 3.5; en comunicación, ficha completa + narrativa
+seguible ya es 3.5.
 
 ### 5bis. Indicio de IA sin filtro — SOLO sobre el material entregado
 El curso permite usar IA; lo que se señala es entregarla SIN el trabajo manual
