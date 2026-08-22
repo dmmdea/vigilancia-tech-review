@@ -58,6 +58,7 @@ reliably accept the \\\\?\\ prefix, so short output paths are the only robust
 fix. Default matroot is a short dir in the system temp area, never the
 (often very deep) session scratchpad.
 """
+import hashlib
 import json
 import os
 import shutil
@@ -256,6 +257,30 @@ def sheet_to_text(src, dst_txt, max_rows=400):
     return ("TRUNCADO — " + "; ".join(truncated)) if truncated else None
 
 
+def content_key(path):
+    """Cheap content identity for a staged media file: size + sha256 over the
+    head and tail. A transcript may only be carried forward onto a file that
+    is byte-identical to the one it was produced from — matching by filename
+    alone silently re-attaches a stale transcript when a student resubmits
+    under the same name, and the reviewer is told to grade by that text."""
+    try:
+        size = os.path.getsize(longpath(path))
+    except OSError:
+        return None
+    h = hashlib.sha256()
+    h.update(str(size).encode())
+    chunk = 1 << 20
+    try:
+        with open(longpath(path), "rb") as f:
+            h.update(f.read(chunk))
+            if size > 2 * chunk:
+                f.seek(-chunk, os.SEEK_END)
+                h.update(f.read(chunk))
+    except OSError:
+        return None
+    return h.hexdigest()[:32]
+
+
 def media_duration(src):
     """Seconds via ffmpeg -i, or None. Never raises; an unknown duration is
     None, never 0 (0 would read as an empty file)."""
@@ -390,6 +415,7 @@ def process_file(fr, folder_id, items, matroot, prefix=""):
             items.append({
                 "kind": "video", "label": name,
                 "video_path": os.path.abspath(local), "duration_sec": dur,
+                "content_key": content_key(local),
                 "frames": [os.path.abspath(os.path.join(fdir, f)) for f in frames],
                 "transcript_path": None,
                 "note": ("fotogramas extraídos para revisión visual"
@@ -411,6 +437,7 @@ def process_file(fr, folder_id, items, matroot, prefix=""):
                 "kind": "audio", "label": name,
                 "audio_path": os.path.abspath(local),
                 "duration_sec": dur, "size_bytes": size,
+                "content_key": content_key(local),
                 "transcript_path": None,
                 "note": ("audio sin transcripcion: si es habla, "
                          "TRANSCRIBELO (--transcript) antes de calificar; "
@@ -499,9 +526,24 @@ def main():
     materials = {}
     prev_materials = {}
     if os.path.exists(out_path):
-        with open(out_path, encoding="utf-8") as f:
-            prev_materials = json.load(f)
-        if only:
+        try:
+            with open(out_path, encoding="utf-8") as f:
+                prev_materials = json.load(f)
+        except (OSError, json.JSONDecodeError) as exc:
+            if only:
+                # --only MERGES into this file; unreadable means we would
+                # silently drop every folder we are not reprocessing.
+                print(f"ERROR: {out_path} no se puede leer ({exc}). Con "
+                      "--only ese archivo es la base del merge, así que "
+                      "continuar BORRARÍA las carpetas no reprocesadas. "
+                      "Corrige o borra el archivo y vuelve a correr SIN "
+                      "--only.", file=sys.stderr)
+                sys.exit(2)
+            print(f"AVISO: {out_path} ilegible ({exc}) — se regenera desde "
+                  "cero; las transcripciones ya adjuntadas NO se conservan, "
+                  "vuelve a pasarlas con --transcript.", file=sys.stderr)
+            prev_materials = {}
+        if only and prev_materials:
             # Load-and-merge: a filtered re-run must never drop skipped
             # folders.
             materials = dict(prev_materials)
@@ -546,23 +588,47 @@ def main():
                       ((prev_materials.get(fid) or {}).get("items") or [])
                       if it.get("kind") in MEDIA_KINDS
                       and it.get("transcript_path")]
-        prev_by_label = {}
+        # Match on CONTENT, never on filename+position: a resubmission
+        # under the same name, or a reordered listing, would otherwise hand
+        # a stale transcript to a different recording — and the item note
+        # tells the reviewer to grade by that transcript.
+        prev_by_content = {}
         for it in prev_media:
-            prev_by_label.setdefault((it["kind"], it.get("label")),
-                                     []).append(it["transcript_path"])
-        seen_labels = {}
+            ck = it.get("content_key")
+            if ck:
+                prev_by_content.setdefault(ck, []).append(
+                    (it.get("label"), it["transcript_path"]))
         carried = 0
+        stale = []
         for it in media:
-            key = (it["kind"], it.get("label"))
-            nth = seen_labels.get(key, 0)
-            seen_labels[key] = nth + 1
-            candidates = prev_by_label.get(key) or []
-            if nth < len(candidates) and not it.get("transcript_path"):
-                it["transcript_path"] = candidates[nth]
+            if it.get("transcript_path"):
+                continue
+            ck = it.get("content_key")
+            bucket = prev_by_content.get(ck) if ck else None
+            if bucket:
+                old_label, tpath = bucket.pop(0)
+                it["transcript_path"] = tpath
                 carried += 1
+                if old_label != it.get("label"):
+                    print(f"NOTA: transcripción conservada en {fid} pese al "
+                          f"cambio de nombre ('{old_label}' -> "
+                          f"'{it.get('label')}'): el contenido es idéntico.",
+                          file=sys.stderr)
+            else:
+                # same name, different bytes = a NEW recording
+                prev_same_label = [p for p in prev_media
+                                   if p.get("label") == it.get("label")]
+                if prev_same_label:
+                    stale.append(it.get("label"))
         if carried:
             print(f"NOTA: {carried} transcripción(es) conservada(s) de la "
-                  f"corrida anterior en {fid}.", file=sys.stderr)
+                  f"corrida anterior en {fid} (contenido idéntico).",
+                  file=sys.stderr)
+        for label in stale:
+            print(f"ATENCION: '{label}' en {fid} tenía transcripción en la "
+                  "corrida anterior, pero el ARCHIVO CAMBIÓ (contenido "
+                  "distinto). NO se reutiliza la transcripción vieja — "
+                  "vuelve a transcribir esta versión.", file=sys.stderr)
 
         for idx, tpath in transcripts.get(fid, []):
             if idx is not None:
@@ -603,8 +669,11 @@ def main():
             kinds[it["kind"]] = kinds.get(it["kind"], 0) + 1
         print(f"{e['student_name'][:38]:38s} {kinds}", flush=True)
 
-    with open(out_path, "w", encoding="utf-8") as f:
+    # atomic: a crash mid-write must not leave a half-parsed materials.json
+    tmp_out = out_path + ".tmp"
+    with open(tmp_out, "w", encoding="utf-8") as f:
         json.dump(materials, f, ensure_ascii=False, indent=2)
+    os.replace(tmp_out, out_path)
     errs = [(m["student_name"], it["label"], it["note"])
             for m in materials.values() for it in m["items"]
             if it["kind"] == "error"]

@@ -141,7 +141,19 @@ def describe(items, use_images):
             else:
                 stxt = f", {size / 1e6:.1f} MB.\n"
             head = f"{n}. [AUDIO] «{label}»{dtxt}" + stxt
-            if tp:
+            if size == 0:
+                # nothing to read and nothing to credit: a 0-byte upload is
+                # broken, so the two-readings choice below must not apply
+                lines.append(
+                    head
+                    + "   El archivo está VACÍO: no contiene audio de ningún "
+                      "tipo, así que NO puede sustentar la PoC ni contar "
+                      "como evidencia propia (tampoco si el resto de la "
+                      "entrega afirma que es la salida de la herramienta). "
+                      "Repórtalo con EVIDENCIA NO LEGIBLE y dilo en "
+                      "evidence_notes."
+                    + suffix)
+            elif tp:
                 lines.append(
                     head
                     + "   No puedes escuchar el audio, pero SÍ tienes su "
