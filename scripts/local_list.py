@@ -44,8 +44,16 @@ REVIEWABLE_EXT = {".pptx", ".ppt", ".pdf", ".odp"}
 # skipped "index.html" — a real student submission shape; silently dropped).
 SKIP_NAMES = {"desktop.ini", ".ds_store", "thumbs.db"}
 
+# Canvas writes the submission time differently depending on how the batch
+# was obtained: a Drive-synced copy keeps a separator ("11_58"), while a
+# freshly unzipped bulk download drops it entirely ("1152"). The separator is
+# therefore OPTIONAL. Getting this wrong is not cosmetic: no match means
+# canvas_key=None for EVERY student, which empties the stable Clave column
+# and disables duplicate detection for the whole round (observed on the
+# 2026-08-21 batch: 0/49 folders matched).
 CANVAS_RE = re.compile(
-    r"^(\d+-\d+)\s*-\s*(.+?)\s*-\s*(\d{1,2} de \w+ de \d{4} \d{1,2}[_:]\d{2})$")
+    r"^(\d+-\d+)\s*-\s*(.+?)\s*-\s*(\d{1,2} de \w+ de \d{4} "
+    r"\d{1,2}[_:]?\d{2})$")
 MESES = {"enero": 1, "febrero": 2, "marzo": 3, "abril": 4, "mayo": 5,
          "junio": 6, "julio": 7, "agosto": 8, "septiembre": 9,
          "octubre": 10, "noviembre": 11, "diciembre": 12}
@@ -144,8 +152,19 @@ def parse_ts(ts: str):
         month = MESES[parts[1].lower()]
         rest = parts[2].split(" ")
         year = int(rest[0])
-        hh, mm = rest[1].split(":")
-        return (year, month, day, int(hh), int(mm))
+        clock = rest[1]
+        if ":" in clock:
+            hh, mm = clock.split(":")
+        else:
+            # separator-less form ("1152" / "935"): the last two digits are
+            # always the minutes
+            hh, mm = clock[:-2], clock[-2:]
+        if not hh or not mm.isdigit() or not hh.isdigit():
+            return None
+        hh_i, mm_i = int(hh), int(mm)
+        if not (0 <= hh_i <= 23 and 0 <= mm_i <= 59):
+            return None
+        return (year, month, day, hh_i, mm_i)
     except Exception:
         return None
 
