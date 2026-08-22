@@ -2,11 +2,18 @@
 """Build the three-sheet results Excel (Ranking, Detalle, Meta) from the orchestrator's results JSON.
 
 Usage:
-    python make_excel.py <results.json> <output.xlsx> [--listing=<listing.json>]...
+    python make_excel.py <results.json> <output.xlsx> [--listing=<listing.json>]... [--dq-policy=cap:3.0]
 
 The final grade is computed HERE (single source of truth):
     final = 0.50*poc + 0.25*impacto + 0.25*comunicacion   (rounded to 0.01)
-    disqualified -> final = 1.0
+    disqualified -> Nota final per --dq-policy (Nota rúbrica always shown):
+        cap:N    (DEFAULT, cap:3.0) final = min(rúbrica, N) — TA-team feedback
+                 2026-08-21: "flexibiliza... les ponga 3 o algo así y que deje
+                 la nota" — a DQ'd student keeps their rubric grade visible and
+                 cannot exceed N
+        fixed:N  final = N regardless of the rubric
+        rubric   final = rúbrica (no penalty; the DQ stays visible as a flag)
+        legacy   final = 1.0 (the original automatic-1.0 rule)
 A reviewed row with missing/invalid/out-of-range scores is DOWNGRADED to
 "no_revisado" with a visible reason — it never renders as a normal graded row
 and never aborts the workbook (fairness: every submission stays visible).
@@ -47,6 +54,48 @@ ANEXO_FILL = PatternFill("solid", fgColor="D1FAE5")    # leído en la revisión
 REEMP_FILL = PatternFill("solid", fgColor="EDE9FE")    # versión reemplazada
 THIN = Border(*[Side(style="thin", color="D1D5DB")] * 4)
 
+DQ_POLICY = ("cap", 3.0)   # overridden by --dq-policy; see module docstring
+
+
+def parse_dq_policy(text: str):
+    """'cap:3.0' | 'fixed:3.0' | 'rubric' | 'legacy' -> (mode, value)."""
+    mode, _, val = text.strip().lower().partition(":")
+    if mode in ("rubric", "legacy"):
+        if val:
+            raise ValueError(f"'{mode}' no lleva valor")
+        return (mode, 1.0 if mode == "legacy" else None)
+    if mode in ("cap", "fixed"):
+        try:
+            v = float(val)
+        except ValueError:
+            raise ValueError(f"'{mode}' requiere un número, p. ej. {mode}:3.0")
+        if not 1.0 <= v <= 5.0:
+            raise ValueError("el valor debe estar entre 1.0 y 5.0")
+        return (mode, v)
+    raise ValueError("modos válidos: cap:N, fixed:N, rubric, legacy")
+
+
+def apply_dq_policy(rubric: float) -> float:
+    mode, v = DQ_POLICY
+    if mode == "cap":
+        return round(min(rubric, v), 2)
+    if mode == "fixed":
+        return v
+    if mode == "legacy":
+        return 1.0
+    return rubric            # 'rubric'
+
+
+def dq_policy_text() -> str:
+    mode, v = DQ_POLICY
+    return {"cap": f"nota final = mín(nota rúbrica, {v}) — conserva la nota de "
+                   "la rúbrica y la limita",
+            "fixed": f"nota final = {v} fija",
+            "rubric": "nota final = nota rúbrica (sin penalización; la DQ "
+                      "queda como señal)",
+            "legacy": "nota final = 1.0 automática"}[mode]
+
+
 RANK_COLS = [
     ("Posición", 9), ("Top 5", 7), ("Archivo", 38), ("Estudiante", 24),
     ("Clave", 12),
@@ -54,7 +103,7 @@ RANK_COLS = [
     ("Fecha lanz. verificada", 15), ("Fuente verificación", 40),
     ("Confianza", 10), ("Edad (meses)", 9), ("¿Descalificado?", 13),
     ("Razón DQ", 30), ("PoC (50%)", 10), ("Impacto (25%)", 10),
-    ("Comunicación (25%)", 12), ("Nota final", 10),
+    ("Comunicación (25%)", 12), ("Nota rúbrica", 10), ("Nota final", 10),
     ("Indicio IA (1-5)", 10),
     ("Flags revisión humana", 28),
     ("Estado", 16), ("Detalle estado", 30),
@@ -97,18 +146,23 @@ def normalize(r: dict) -> None:
         r.setdefault("status_reason", "estado ausente o inválido en results.json")
         r["_final"] = None
         return
+    r["_rubric"] = None
     if status in ("no_revisado", "revisado_anexo", "reemplazada"):
         r["_final"] = None
         return
-    if r.get("disqualified"):
-        r["_final"] = 1.0
-        return
+    dq = bool(r.get("disqualified"))
     s = r.get("scores") or {}
     try:
         poc = float(s["poc"])
         imp = float(s["impacto"])
         com = float(s["comunicacion"])
     except (KeyError, TypeError, ValueError):
+        if dq and DQ_POLICY[0] in ("fixed", "legacy"):
+            # the policy value does not depend on the rubric — the row can
+            # still carry a grade, but a human must see the missing scores
+            r["_final"] = apply_dq_policy(0.0)
+            r["flags"].append("REVISAR MANUALMENTE")
+            return
         r["status"] = "no_revisado"
         r["status_reason"] = "puntajes ausentes o inválidos en la revisión"
         r["flags"].append("REVISAR MANUALMENTE")
@@ -121,7 +175,9 @@ def normalize(r: dict) -> None:
         r["flags"].append("REVISAR MANUALMENTE")
         r["_final"] = None
         return
-    r["_final"] = round(0.50 * poc + 0.25 * imp + 0.25 * com, 2)
+    rubric = round(0.50 * poc + 0.25 * imp + 0.25 * com, 2)
+    r["_rubric"] = rubric
+    r["_final"] = apply_dq_policy(rubric) if dq else rubric
 
 
 def sort_key(r: dict):
@@ -187,8 +243,17 @@ def main() -> None:
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     listings = [a.split("=", 1)[1] for a in sys.argv[1:]
                 if a.startswith("--listing=")]
+    global DQ_POLICY
+    for a in sys.argv[1:]:
+        if a.startswith("--dq-policy="):
+            try:
+                DQ_POLICY = parse_dq_policy(a.split("=", 1)[1])
+            except ValueError as e:
+                print(f"ERROR: --dq-policy inválida: {e}", file=sys.stderr)
+                sys.exit(1)
     unknown = [a for a in sys.argv[1:]
-               if a.startswith("--") and not a.startswith("--listing=")]
+               if a.startswith("--") and not a.startswith(("--listing=",
+                                                             "--dq-policy="))]
     if unknown:
         # A typo'd flag must never silently disarm the completeness gate.
         print(f"ERROR: unknown option(s): {' '.join(unknown)}", file=sys.stderr)
@@ -268,6 +333,7 @@ def main() -> None:
             ("SÍ" if dq else "NO") if reviewed else "",
             r.get("dq_reason", ""),
             s.get("poc", ""), s.get("impacto", ""), s.get("comunicacion", ""),
+            r.get("_rubric") if r.get("_rubric") is not None else "",
             r["_final"] if r["_final"] is not None else "",
             r.get("indicio_ia", ""),
             ", ".join(r.get("flags", [])),
@@ -284,7 +350,7 @@ def main() -> None:
             c.border = THIN
             if fill:
                 c.fill = fill
-            if j in (14, 15, 16, 17):
+            if j in (14, 15, 16, 17, 18):
                 c.number_format = "0.00"
 
     ws2 = wb.create_sheet("Detalle")
@@ -307,9 +373,11 @@ def main() -> None:
     meta = wb.create_sheet("Meta")
     meta["A1"], meta["B1"] = "Fecha de corrida", data.get("run_date", "")
     meta["A2"], meta["B2"] = "Carpeta Drive", data.get("folder_url", "")
-    meta["A3"], meta["B3"] = "Regla de corte", ("> 4 meses desde lanzamiento verificado → 1.0; "
+    meta["A3"], meta["B3"] = "Regla de corte", ("> 4 meses desde lanzamiento verificado → DESCALIFICADA; "
+                                                f"política de nota para DQ: {dq_policy_text()}; "
                                                 "zona 3.5–4.5 meses lleva flag VERIFICAR FECHA")
-    meta["A4"], meta["B4"] = "Ponderación", "PoC 50% · Impacto 25% · Comunicación 25%"
+    meta["A4"], meta["B4"] = "Ponderación", ("PoC 50% · Impacto 25% · Comunicación 25% = Nota rúbrica; "
+                                             "Nota final = Nota rúbrica salvo DQ (ver Regla de corte)")
     meta["A6"], meta["B6"] = "Indicio IA (1-5)", ("señal ADVISORY de uso de IA sin filtro sobre el material "
                                                   "entregado (1=curado a mano, 5=volcado sin filtrar); NUNCA "
                                                   "es componente de la nota")

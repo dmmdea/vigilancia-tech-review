@@ -142,3 +142,25 @@ despachada sobre 5cff626; ship al quedar NOTHING NEW.
 (cada uno reproducido por ejecución y corregido con red/green). Antigravity
 verificado E2E en vivo (adaptador actualizado). Ronda 5: NOTHING NEW —
 rama lista para merge bajo la autorización permanente R13.
+
+## Round 3 — feedback del equipo de monitores (R21-R24, 2026-08-21)
+
+Fuente: mensaje del equipo de TAs vía Daniel + el consolidado que dejaron en
+`Resultados-Vigilancia-Tecnologica-2026-08-14.xlsx` (hojas "Para revisar" y
+"listado estudiantes"). Evidencia medida antes de tocar la rúbrica: los TAs NO
+cambiaron ningún puntaje de PoC/Impacto (0/73) y uno de Comunicación; Impacto
+promedio 3.06 (36% < 3.0) vs PoC 3.70 y Comunicación 3.85 (−0.64 por
+estudiante); 5 de 11 descalificaciones fueron revertidas ("VALIDO"); para
+TODAS las filas DQ su fórmula de nota usa la rúbrica.
+
+| # | Request (verbatim) | Diseño |
+|---|---|---|
+| R21 | "flexibiliza que si no lo aplican les ponga 3 o algo así y que deje la nota" | `make_excel.py --dq-policy` (default `cap:3.0`: Nota final = mín(rúbrica, 3.0); `fixed:N`, `rubric`, `legacy`); nueva columna `Nota rúbrica` siempre visible; Meta documenta la política. Supuesto: "3 o algo así" = tope, no nota fija (una DQ con PoC 1.3 no debe subir a 3.0) — confirmar con Daniel |
+| R22 | "El tema del impacto que está siendo muy ácido" | Anclas explícitas en ambos templates: 3.0 = ambos niveles sin cifras; 3.5-4.0 = dato/estimación concreta; 4.5-5.0 = cuantificado + límites; no exigir cuantificación para 3.5; "NO regales nota" queda SOLO para PoC |
+| R23 | "tal vez en comunicación también lo podríamos dejar que sea menos ácido" | Anclas: 3.5 = ficha completa + narrativa seguible aunque el diseño sea básico; no penalizar estética/plantilla/formato |
+| R24 | "ya la carpeta de semana 2 tiene el consolidado" (evidencia: 5/11 DQ revertidas) | Paso 5bis bidireccional para TODA fila DQ: veredicto `mas_nueva` (función nueva fechada con la familia vieja del producto) → VERIFICAR FECHA + REVISAR MANUALMENTE + nota "la DESCALIFICACIÓN puede ser INCORRECTA"; nunca des-descalifica solo |
+
+Fuera de alcance (propuestas, no construidas): cruce con el listado oficial de
+estudiantes por código (los TAs lo hicieron a mano con VLOOKUP: "No veo
+trabajo", "Retirado"); subir el umbral de DQ a 4.5 meses (los TAs aceptaron
+lanzamientos de abril a 4.2-4.3 meses).

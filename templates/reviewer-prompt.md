@@ -93,15 +93,28 @@ Aunque esté descalificada, califica igual los tres criterios (los TAs necesitan
   de resultados mediocres vale más que afirmaciones sin respaldo. 5.0 = caso real claro
   con evidencia propia abundante y análisis de lo que funcionó y lo que no;
   1.0-2.0 = sin evidencia propia o demo genérica copiada del marketing del fabricante.
-- **impacto** — Análisis de impacto (peso 25%): ¿cuantifica o argumenta seriamente el
-  impacto en productividad personal Y empresarial? ¿Considera límites, costos, riesgos?
+- **impacto** — Análisis de impacto (peso 25%): ¿argumenta el impacto en productividad
+  personal Y empresarial? Anclas (calibradas con el equipo docente tras la primera
+  ronda, donde este criterio salió ~0.6 por debajo de la PoC para el mismo estudiante):
+  **3.0** = argumenta AMBOS niveles de forma razonable aunque sin cifras ·
+  **3.5–4.0** = argumento específico al caso con al menos un dato, estimación o ejemplo
+  concreto · **4.5–5.0** = impacto cuantificado en ambos niveles Y considera límites,
+  costos o riesgos. Baja de 3.0 SOLO si falta uno de los dos niveles o el argumento es
+  genérico (copiado del marketing). NO exijas cuantificación para llegar a 3.5; la
+  ausencia de límites/riesgos resta como máximo 0.5.
 - **comunicacion** — Comunicación (peso 25%): ¿ficha técnica completa (nombre, fecha,
-  objetivo)? ¿Narrativa clara y presentable en 3 minutos? ¿Slides legibles y bien
-  organizadas? (Evalúas el material, no la presentación oral.)
+  objetivo)? ¿Narrativa que un espectador sigue en 3 minutos? ¿Slides legibles?
+  (Evalúas el material, no la presentación oral.) Anclas: **3.5** = ficha completa +
+  narrativa seguible, aunque el diseño sea básico · **4.0–4.5** = además bien organizada
+  y legible · **5.0** = ejemplar. No penalices estética, plantillas sencillas ni
+  densidad de texto si el mensaje se entiende; baja de 3.0 SOLO si falta la ficha
+  técnica o la narrativa no se sigue.
 
 En cada justificación cita slides concretas ("slide 4: captura del dashboard con ...").
 Si el archivo tiene UNA sola página, cita elementos concretos de la lámina en su lugar.
-NO regales nota: 3.0 es un trabajo correcto; 4.5+ exige evidencia sobresaliente.
+Calibración: en **poc** NO regales nota (3.0 = trabajo correcto; 4.5+ exige evidencia
+sobresaliente). En **impacto** y **comunicacion** aplica las anclas de arriba tal cual:
+un trabajo correcto en esos dos criterios es 3.5, no 3.0.
 
 ### 5bis. Indicio de IA sin filtro — SOLO sobre el material entregado
 El curso permite usar IA; lo que se señala es entregarla SIN el trabajo manual

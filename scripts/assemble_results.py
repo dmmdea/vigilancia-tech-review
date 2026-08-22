@@ -465,7 +465,7 @@ def main():
         v = unicodedata.normalize("NFKD", str(v or "").strip().lower())
         return "".join(ch for ch in v if not unicodedata.combining(ch))
 
-    VALID_VERDICTS = {"confirmada", "mas_vieja", "no_concluyente"}
+    VALID_VERDICTS = {"confirmada", "mas_vieja", "mas_nueva", "no_concluyente"}
     row_ids = {r.get("id") for r in results}
     checks_by_id = {}
     for c in date_checks:
@@ -487,17 +487,26 @@ def main():
                   "older_evidence_url — degradado a no_concluyente.",
                   file=sys.stderr)
             v = "no_concluyente"
+        if v == "mas_nueva" and not (c.get("newer_date")
+                                     and c.get("newer_evidence_url")):
+            print(f"AVISO: date_check {rid} dice mas_nueva SIN newer_date/"
+                  "newer_evidence_url — degradado a no_concluyente.",
+                  file=sys.stderr)
+            v = "no_concluyente"
         c = dict(c, verdict=v)
         prev = checks_by_id.get(rid)
         if prev:
-            # duplicate: the WORST verdict survives (mas_vieja > no_concl > conf)
-            rank = {"mas_vieja": 2, "no_concluyente": 1, "confirmada": 0}
+            # duplicate: the most ACTIONABLE verdict survives
+            # (mas_vieja = mas_nueva > no_concl > conf); ties keep the first
+            rank = {"mas_vieja": 2, "mas_nueva": 2, "no_concluyente": 1,
+                    "confirmada": 0}
             print(f"AVISO: date_check duplicado para {rid} — se conserva el "
                   "veredicto más severo.", file=sys.stderr)
             if rank[v] <= rank[prev["verdict"]]:
                 continue
         checks_by_id[rid] = c
     older_ids = set()
+    newer_ids = set()
     applied_ids = set()   # count CHECKS applied, not rows — two rows sharing
     for row in results:   # an id must not double-count (convergence minor)
         c = checks_by_id.get(row.get("id"))
@@ -519,6 +528,20 @@ def main():
                      "requerida.")
             key = "evidence_notes" if row["status"] == "revisado" else "status_reason"
             row[key] = ((row.get(key) or "") + " | " + extra).strip(" |")
+        elif v == "mas_nueva":
+            newer_ids.add(row["id"])
+            for fl in ("VERIFICAR FECHA", "REVISAR MANUALMENTE"):
+                if fl not in row["flags"]:
+                    row["flags"].append(fl)
+            extra = (f"VERIFICACIÓN ADVERSARIAL DE FECHA (dirección opuesta): "
+                     f"hay evidencia de que la función usada es MÁS NUEVA — "
+                     f"{c.get('newer_capability', '')} lanzada "
+                     f"{c.get('newer_date', '?')}, fuente "
+                     f"{c.get('newer_evidence_url', '')}. La DESCALIFICACIÓN "
+                     "puede ser INCORRECTA; decisión humana requerida (el "
+                     "ensamblador nunca des-descalifica).")
+            key = "evidence_notes" if row["status"] == "revisado" else "status_reason"
+            row[key] = ((row.get(key) or "") + " | " + extra).strip(" |")
         elif v == "no_concluyente":
             if "VERIFICAR FECHA" not in row["flags"]:
                 row["flags"].append("VERIFICAR FECHA")
@@ -528,7 +551,8 @@ def main():
                         + (c.get("notes") or "")).strip(" |")
     if date_checks:
         print(f"date_checks: {len(date_checks)} recibidos, {len(applied_ids)} "
-              f"aplicados ({len(older_ids)} con evidencia de fecha más vieja)")
+              f"aplicados ({len(older_ids)} con evidencia de fecha más vieja, "
+              f"{len(newer_ids)} con evidencia de fecha más nueva)")
 
     # ---- same-tool cross-student reconciliation ---------------------------
     groups = {}
