@@ -1,0 +1,6 @@
+# install.sh se ejecuta en macOS/Linux: con CRLF bash falla con
+# "bad interpreter: /usr/bin/env bash^M". Forzamos LF pase lo que pase.
+*.sh text eol=lf
+
+# los .ps1 los lee PowerShell en Windows
+*.ps1 text eol=crlf
