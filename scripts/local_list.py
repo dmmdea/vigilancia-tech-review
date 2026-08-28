@@ -169,6 +169,39 @@ def parse_ts(ts: str):
         return None
 
 
+def huella(path, size):
+    """Content fingerprint of a submitted file, so a later round can tell a
+    REAL resubmission (identical bytes: the student did not update the case)
+    from a same-named file whose contents changed. Filename alone cannot:
+    students routinely keep the name and rewrite the deck.
+
+    Whole file up to 32 MiB, otherwise head+middle+tail; None when the file
+    cannot be read, which downstream must treat as unknown, never as equal.
+    """
+    if not isinstance(size, int) or size < 0:
+        return None
+    h = hashlib.sha256()
+    h.update(str(size).encode())
+    chunk = 1 << 20
+    try:
+        with open(longpath(path), "rb") as f:
+            if size <= (32 << 20):
+                for block in iter(lambda: f.read(chunk), b""):
+                    h.update(block)
+            else:
+                h.update(f.read(chunk))
+                f.seek(size // 2)
+                h.update(f.read(chunk))
+                f.seek(-chunk, os.SEEK_END)
+                h.update(f.read(chunk))
+    except OSError:
+        return None
+    # 128 bits, not 64: a collision here would report a student as having
+    # resubmitted work they actually rewrote, and the extra 16 characters
+    # cost nothing
+    return h.hexdigest()[:32]
+
+
 def collect_files(folder, notes=None, depth=1):
     """Files inside `folder`, descending ONE level into subfolders (students
     often keep screenshots in an "evidencias/" subfolder). Anything deeper
@@ -197,7 +230,7 @@ def collect_files(folder, notes=None, depth=1):
             continue
         size, size_err = getsize(full)
         rec = {"name": name, "ext": os.path.splitext(name)[1].lower(),
-               "path": full, "size": size}
+               "path": full, "size": size, "huella": huella(full, size)}
         if size_err:
             rec["size_error"] = size_err
         out.append(rec)

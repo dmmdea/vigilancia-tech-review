@@ -140,6 +140,7 @@ def main():
         #       newer submission (Excel: REEMPLAZADA).
         results.append({"id": fr["id"], "file": fr["name"],
                         "student": student, "canvas_key": canvas_key,
+                        "huella": fr.get("huella"),
                         "status": status, "status_reason": reason,
                         "disqualified": False, "flags": list(flags or [])})
 
@@ -148,6 +149,9 @@ def main():
         row = dict(r)
         row["id"] = fr["id"]
         row["canvas_key"] = canvas_key
+        # content fingerprint of the submitted file: lets a later round tell
+        # a real resubmission from a same-named but rewritten deck
+        row["huella"] = fr.get("huella")
         row["file"] = fr["name"]              # always the ORIGINAL filename
         row["status"] = "revisado"
         problems, _moved = normalize_review(row)

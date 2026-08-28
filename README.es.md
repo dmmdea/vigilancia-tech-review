@@ -60,6 +60,12 @@ flowchart LR
   indexada para que una carpeta con varias pistas nunca se cruce). El habla sin
   transcribir se marca, nunca se adivina; un audio NO hablado generado por la
   herramienta evaluada cuenta como evidencia propia del estudiante.
+- **Hoja `Seguimiento`**: quién no entregó nada nuevo en la ronda, quién reenvió
+  un archivo de contenido idéntico y cómo viene su nota, para que el equipo
+  docente pueda buscar a los estudiantes que dejan de actualizar su caso y van
+  mal. Distingue una ausencia confirmada de una que solo cruza rondas con
+  identificadores distintos, y nunca declara "entrega repetida" por el nombre
+  del archivo.
 - **Política de nota para descalificadas configurable** (`make_excel.py --dq-policy`):
   por defecto `cap:3.0` conserva visible la nota de rúbrica (`Nota rúbrica`) y limita la
   final a 3.0 — calibración del equipo docente tras la primera ronda; `fixed:N`,

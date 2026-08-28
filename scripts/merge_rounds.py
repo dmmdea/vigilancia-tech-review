@@ -15,6 +15,11 @@ borrar jamás el histórico de rondas anteriores.
   el registro, el script se niega (exit 2) en lugar de borrar historia.
 - Re-entregar la MISMA ronda reemplaza SOLO su trío (refresh); las hojas de
   cualquier otra ronda no se tocan nunca.
+- Hoja "Seguimiento": quién NO entregó en la ronda más reciente, quién
+  volvió a mandar EXACTAMENTE el mismo archivo (no actualizó su caso) y cómo
+  viene su nota, para que el equipo docente pueda buscar a esos estudiantes.
+  Un estudiante solo puede reportarse como "SIN ENTREGA" si aparece en alguna
+  ronda ANTERIOR: de otro modo no hay evidencia de que exista.
 - Hoja "Histórico": nota final por estudiante por ronda, en orden de llegada
   de las rondas. Se agrupa por la columna estable **Clave** (clave Canvas /
   id de carpeta) — el nombre visible del estudiante varía entre revisores
@@ -32,10 +37,11 @@ import re
 import shutil
 import sys
 import tempfile
+import unicodedata
 from copy import copy
 
 from openpyxl import Workbook, load_workbook
-from openpyxl.styles import Alignment, Font, PatternFill
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 for _s in (sys.stdout, sys.stderr):
@@ -157,15 +163,272 @@ def copy_sheet(src_ws, dst_wb, title):
     return ws
 
 
+
+THIN = Border(*[Side(style="thin", color="D1D5DB")] * 4)
+SEG_FILL_SIN = PatternFill("solid", fgColor="FECACA")     # sin entrega
+SEG_FILL_REP = PatternFill("solid", fgColor="FEF3C7")     # entrega repetida
+SEG_FILL_OK = PatternFill("solid", fgColor="D1FAE5")      # entregó
+SEG_FILL_DUDA = PatternFill("solid", fgColor="E5E7EB")    # sin confirmar
+NOTA_MINIMA = 3.0      # nota aprobatoria del curso
+
+
+def _sin_archivo(nombre):
+    """True when the row is a placeholder the assembler synthesised because
+    the folder held NO file at all.
+
+    assemble_results.py emits these wrapped in parentheses and without an
+    extension ("(carpeta sin archivos)", "(<estudiante> — inconsistencia de
+    entradas)"). They must NOT count as a delivery: an empty Canvas folder is
+    precisely a student who did not hand anything in, and counting it would
+    clear the most common real case this sheet exists to catch. An unreadable
+    FILE is different and does count — the student did the work.
+    """
+    n = str(nombre or "").strip()
+    return n.startswith("(") and n.endswith(")")
+
+
+def _norm_archivo(name):
+    """Compare submissions by file name, accent-normalised and case-folded.
+
+    NFC matters: a name that came out of a .zip is decomposed while the same
+    name typed by a reviewer is composed, and a byte comparison would call
+    two identical submissions different (and thus miss a repeat).
+    """
+    return unicodedata.normalize("NFC", str(name or "")).strip().casefold()
+
+
+def build_seguimiento(wb, data, order, rounds, keyed_rounds=None,
+                     huella_rounds=None):
+    """Who did NOT hand in something new in the most recent round.
+
+    Answers the teaching team's question: "¿qué estudiantes no han hecho
+    nuevos envíos?", so a student who stops updating their case while doing
+    badly can be contacted. Three states for the latest round:
+
+      ENTREGÓ            appears in the round with a submission of its own
+      ENTREGA REPETIDA   appears, and the submitted file is provably the one
+                         already handed in before: identical content
+                         fingerprint (or, when no round carries one, the same
+                         file name — reported as "MISMO NOMBRE" instead,
+                         because a student may legitimately keep the filename
+                         while rewriting the deck)
+      SIN ENTREGA        absent from the round, having submitted before
+      SIN CONFIRMAR      absent, BUT the comparison crosses rounds that do not
+                         share the stable 'Clave' identifier, so the absence
+                         cannot be told apart from an identifier mismatch
+
+    Two things this sheet refuses to do, because both would send a teacher to
+    reproach a student who did the work:
+      * assert an absence across rounds keyed differently (a pre-'Clave'
+        round matched by display name splits students; on the real Semana 2
+        ↔ Semana 3 master, 25 of 52 apparent absences were that split, and
+        three of them had in fact submitted);
+      * call a resubmission "repeated" on filename alone.
+    A student who has never appeared in ANY round cannot be listed either:
+    this workbook holds submissions, not the class roster, so their absence
+    is unknown, not proven. That gap is stated on the sheet instead of guessed.
+    """
+    keyed_rounds = set(keyed_rounds or ())
+    huella_rounds = set(huella_rounds or ())
+    if "Seguimiento" in wb.sheetnames:
+        del wb["Seguimiento"]
+    if not rounds:
+        return 0
+    actual = rounds[-1]
+    previas = rounds[:-1]
+
+    filas = []
+    for key in order:
+        d = data[key]
+        rows = d.get("rows") or {}
+        vistos = d.get("vistos") or set()
+        if actual not in rows and not any(r in rows for r in previas) \
+                and actual not in vistos:
+            continue                      # never seen anywhere: no evidence
+        entregadas = [r for r in rounds if r in rows]
+        # consecutive missed rounds ending at the most recent one
+        seguidas = 0
+        for r in reversed(rounds):
+            if r in rows:
+                break
+            seguidas += 1
+        notas = [(r, d["grades"][r]) for r in rounds if r in d["grades"]
+                 and isinstance(d["grades"][r], (int, float))]
+        ultima = notas[-1][1] if notas else None
+        promedio = round(sum(n for _r, n in notas) / len(notas), 2) if notas else None
+
+        # an absence is only assertable between rounds where THIS student
+        # was identified by Clave; a name-keyed earlier row cannot be told
+        # apart from an identifier mismatch
+        carpeta_vacia = False
+        comparables = [r for r in previas
+                       if r in rows and rows[r].get("con_clave")]
+        if actual in rows:
+            cur = rows[actual]
+            hue = (cur.get("huella") or "").strip()
+            antes_h = {(rows[r].get("huella") or "").strip() for r in previas
+                       if r in rows}
+            antes_h.discard("")
+            arch = _norm_archivo(cur.get("archivo"))
+            antes_a = {_norm_archivo(rows[r].get("archivo")) for r in previas
+                       if r in rows}
+            antes_a.discard("")
+            if hue and hue in antes_h:
+                estado = "ENTREGA REPETIDA"      # identical content: proven
+            elif hue and antes_h:
+                # both sides carry a fingerprint and they differ: the file
+                # DID change. Falling back to the filename here would accuse
+                # a student who kept the name and rewrote the deck.
+                estado = "ENTREGÓ"
+            elif arch and arch in antes_a:
+                estado = "MISMO NOMBRE"          # no fingerprint: verify
+            else:
+                estado = "ENTREGÓ"
+        elif actual in vistos:
+            # DIRECT evidence: the student has a folder in this round and it
+            # holds no file. No cross-round identity matching is needed, so
+            # this is confirmed no matter how the rounds are keyed.
+            estado = "SIN ENTREGA"
+            carpeta_vacia = True
+        elif actual in keyed_rounds and comparables:
+            estado = "SIN ENTREGA"
+        else:
+            estado = "SIN CONFIRMAR"
+
+        alerta = []
+        if estado == "SIN ENTREGA" and carpeta_vacia:
+            alerta.append(f"su carpeta de {actual} está vacía: no entregó "
+                          "nada esta ronda")
+        elif estado == "SIN ENTREGA":
+            alerta.append(f"no entregó en {actual}"
+                          + (f" ({seguidas} rondas seguidas)" if seguidas > 1 else ""))
+        elif estado == "SIN CONFIRMAR":
+            falta = "la ronda actual no trae columna 'Clave'" \
+                if actual not in keyed_rounds \
+                else "sus rondas anteriores no traen columna 'Clave'"
+            alerta.append("no aparece en " + actual + ", pero " + falta
+                          + ", así que la ausencia NO está confirmada: puede "
+                            "ser un desajuste de identificador. Verificar "
+                            "antes de escribirle")
+        elif estado == "ENTREGA REPETIDA":
+            alerta.append("volvió a enviar un archivo de contenido idéntico: "
+                          "el caso no avanzó")
+        elif estado == "MISMO NOMBRE":
+            alerta.append("reenvió un archivo con el mismo nombre que ya "
+                          "había entregado; puede haberlo actualizado por "
+                          "dentro, verificar el archivo antes de escribirle")
+        if ultima is not None and ultima < NOTA_MINIMA:
+            alerta.append(f"última nota {ultima:.2f}, por debajo de {NOTA_MINIMA:.1f}")
+        filas.append({
+            "key": key if isinstance(key, str) else f"{key[0]} ({key[1]})",
+            "name": d["name"], "estado": estado,
+            "entregadas": f"{len(entregadas)} de {len(rounds)}",
+            "seguidas": seguidas, "ultima": ultima, "promedio": promedio,
+            "ronda_ultima": notas[-1][0] if notas else "",
+            "alerta": " · ".join(alerta),
+        })
+
+    # A split identity shows up twice: the old name-keyed half (SIN
+    # CONFIRMAR) and the current Clave-keyed row (ENTREGÓ). Say so on the
+    # doubtful row so nobody chases a student who did submit. This only
+    # annotates; it never merges the rows or moves a grade.
+    def _norm_nombre(x):
+        x = unicodedata.normalize("NFKD", str(x or ""))
+        x = "".join(ch for ch in x if not unicodedata.combining(ch)).casefold()
+        x = re.sub(r"\(.*?\)", " ", x)
+        return " ".join(sorted(w for w in re.split(r"[^a-z]+", x) if len(w) > 2))
+
+    entregaron = {}
+    for f in filas:
+        if f["estado"] in ("ENTREGÓ", "MISMO NOMBRE", "ENTREGA REPETIDA"):
+            entregaron.setdefault(_norm_nombre(f["name"]), []).append(f["key"])
+    for f in filas:
+        if f["estado"] != "SIN CONFIRMAR":
+            continue
+        otras = entregaron.get(_norm_nombre(f["name"]))
+        if otras:
+            f["alerta"] += (" · OJO: hay otra fila con el mismo nombre que SÍ "
+                            f"entregó en {actual} (clave {otras[0]}); lo más "
+                            "probable es que sean la misma persona y que el "
+                            "identificador no cruce entre rondas")
+
+    # the ones the team has to act on first
+    prio = {"SIN ENTREGA": 0, "ENTREGA REPETIDA": 1, "MISMO NOMBRE": 2,
+            "SIN CONFIRMAR": 3, "ENTREGÓ": 4}
+    filas.sort(key=lambda f: (prio[f["estado"]],
+                              f["ultima"] if f["ultima"] is not None else 9,
+                              str.casefold(f["name"])))
+
+    ws = wb.create_sheet("Seguimiento", 1)
+    cols = [("Clave", 12), ("Estudiante", 30), (f"Estado en {actual}"[:31], 18),
+            ("Rondas con entrega", 14), ("Rondas seguidas sin entregar", 14),
+            ("Última nota", 11), ("Ronda de esa nota", 16), ("Promedio", 10),
+            ("Por qué aparece aquí", 58)]
+    for j, (h, w) in enumerate(cols, 1):
+        c = ws.cell(row=1, column=j, value=h)
+        c.fill, c.font = HEADER_FILL, HEADER_FONT
+        c.alignment = Alignment(wrap_text=True, vertical="center")
+        ws.column_dimensions[get_column_letter(j)].width = w
+    for i, f in enumerate(filas, 2):
+        vals = [f["key"], f["name"], f["estado"], f["entregadas"],
+                f["seguidas"] or "", f["ultima"], f["ronda_ultima"],
+                f["promedio"], f["alerta"]]
+        fill = {"SIN ENTREGA": SEG_FILL_SIN,
+                "ENTREGA REPETIDA": SEG_FILL_REP,
+                "MISMO NOMBRE": SEG_FILL_REP,
+                "SIN CONFIRMAR": SEG_FILL_DUDA}.get(f["estado"], SEG_FILL_OK)
+        for j, v in enumerate(vals, 1):
+            c = ws.cell(row=i, column=j, value=v)
+            c.border = THIN
+            c.alignment = Alignment(wrap_text=(j == 9), vertical="top")
+            if j in (6, 8) and isinstance(v, (int, float)):
+                c.number_format = "0.00"
+            if j == 3:
+                c.fill = fill
+    n = len(filas) + 2
+    ws.cell(row=n + 1, column=1, value=(
+        f"Cómo leer esta hoja. SIN ENTREGA: no aparece en '{actual}' y sus "
+        "rondas anteriores comparten el identificador estable 'Clave', así "
+        "que la ausencia sí está confirmada. SIN CONFIRMAR: no aparece, pero "
+        "la comparación cruza rondas sin 'Clave' y la ausencia puede ser un "
+        "desajuste de identificador, no una falta de entrega; verificar antes "
+        "de escribirle. ENTREGA REPETIDA: el archivo entregado tiene "
+        "contenido idéntico a uno anterior (huella de contenido), es decir el "
+        "caso no avanzó. MISMO NOMBRE: coincide el nombre del archivo pero no "
+        "hay huella para comparar el contenido; pudo haberlo actualizado por "
+        "dentro. Un estudiante que NUNCA ha entregado no puede aparecer aquí, "
+        "porque este libro solo contiene entregas: para esos hay que cruzar "
+        "con el listado oficial del curso."))
+    ws.cell(row=n + 1, column=1).alignment = Alignment(wrap_text=True,
+                                                       vertical="top")
+    ws.merge_cells(start_row=n + 1, start_column=1, end_row=n + 3,
+                   end_column=9)
+    ws.freeze_panes = "C2"
+    cuenta = {}
+    for f in filas:
+        cuenta[f["estado"]] = cuenta.get(f["estado"], 0) + 1
+    print("Seguimiento (ronda '" + actual + "'): "
+          + ", ".join(f"{v} {k}" for k, v in sorted(cuenta.items())))
+    if cuenta.get("SIN CONFIRMAR"):
+        print(f"AVISO: {cuenta['SIN CONFIRMAR']} estudiante(s) quedaron en "
+              "SIN CONFIRMAR porque la comparación cruza rondas sin columna "
+              "'Clave'. NO son ausencias probadas; regenera las rondas viejas "
+              "con el make_excel actual para poder confirmarlas.",
+              file=sys.stderr)
+    return len(filas)
+
 def rebuild_historico(wb, registry):
     """Grade per student per round, arrival-ordered, keyed on the stable
     'Clave' column (falls back to the visible name for pre-Clave rounds)."""
     if "Histórico" in wb.sheetnames:
         del wb["Histórico"]
     rounds = [name for name, _t in registry]
-    data = {}          # key -> {"name": display, "grades": {round: final}}
+    # key -> {"name": display, "grades": {round: final},
+    #         "rows": {round: {"estado", "archivo"}}}
+    data = {}
     order = []
     keyed, name_keyed = [], []
+    keyed_rounds, huella_rounds = set(), set()
     for name, titles in registry:
         t = titles.get("Ranking")
         if not t or t not in wb.sheetnames:
@@ -188,15 +451,43 @@ def rebuild_historico(wb, registry):
                   "columna del Histórico quedará vacía.", file=sys.stderr)
             continue
         i_key = hdr.index("Clave") if "Clave" in hdr else None
+        i_arch = hdr.index("Archivo") if "Archivo" in hdr else None
+        i_hue = hdr.index("Huella") if "Huella" in hdr else None
+        if i_key is not None:
+            keyed_rounds.add(name)
+        if i_hue is not None:
+            huella_rounds.add(name)
         (keyed if i_key is not None else name_keyed).append(name)
+        # PRESENCE pass: a student who submitted something unreadable still
+        # SUBMITTED. Reporting them as "sin entrega" would send a teacher to
+        # scold someone who did the work, so presence is recorded from every
+        # row of the round, not only the graded ones.
+        # ONE pass: the identity of a row is decided once and used for both
+        # its grade and its delivery record. Two passes could disagree — a
+        # duplicate split into a tuple key by the grading side while the
+        # presence side kept the plain key left one student invisible to the
+        # Seguimiento sheet and cleared another who had stopped submitting.
         for row in ws.iter_rows(min_row=2, values_only=True):
-            if row[i_st] != "REVISADO":
-                continue
             est = (row[i_est] or "").strip()
-            key = ((row[i_key] or "").strip() if i_key is not None else "") or est
+            key = ((row[i_key] or "").strip()
+                   if i_key is not None else "") or est
             if not key:
                 continue
-            if key in data and name in data[key]["grades"]:
+            estado = row[i_st]
+            if estado == "REEMPLAZADA":
+                # a superseded duplicate is neither a grade nor a delivery,
+                # and must not create a student row of its own
+                continue
+            # did THIS row carry a real Clave value? A round can have the
+            # column while individual rows leave it empty (the partially
+            # keyed Semana 2), and those rows fall back to the display name
+            con_clave = bool(i_key is not None and (row[i_key] or "").strip())
+            arch = (row[i_arch] or "").strip() if i_arch is not None else ""
+            hue = (row[i_hue] or "").strip() if i_hue is not None else ""
+
+            dup_label = None
+            if estado == "REVISADO" and key in data \
+                    and name in data[key]["grades"]:
                 # two REVISADO rows in the SAME round collapsing onto one
                 # key (blank Clave + shared display name) would silently
                 # drop a grade — disambiguate with a TUPLE key, which can
@@ -212,18 +503,31 @@ def rebuild_historico(wb, registry):
                 while (base, n) in data and name in data[(base, n)]["grades"]:
                     n += 1
                 key = (base, n)
-                if key not in data:
-                    data[key] = {"name": f"{est} (fila duplicada {n})",
-                                 "grades": {}}
-                    order.append(key)
-                data[key]["grades"][name] = row[i_fin]
-                continue    # keep the duplicate's marked display name
+                dup_label = f"{est} (fila duplicada {n})"
             if key not in data:
-                data[key] = {"name": est, "grades": {}}
+                data[key] = {"name": dup_label or est, "grades": {},
+                             "rows": {}, "vistos": set()}
                 order.append(key)
-            data[key]["grades"][name] = row[i_fin]
-            if est:
-                data[key]["name"] = est     # latest round's display name wins
+            data[key].setdefault("vistos", set())
+
+            # Canvas made this student a folder, so we know they exist in
+            # the round even when the folder turned out to be empty.
+            data[key]["vistos"].add(name)
+            if not _sin_archivo(arch):
+                prev = data[key]["rows"].get(name)
+                # the graded row wins the slot; an annex only fills a gap
+                if prev is None or (estado == "REVISADO"
+                                    and prev.get("estado") != "REVISADO"):
+                    data[key]["rows"][name] = {
+                        "estado": estado, "archivo": arch, "huella": hue,
+                        "con_clave": con_clave}
+
+            if estado == "REVISADO":
+                data[key]["grades"][name] = row[i_fin]
+                if dup_label:
+                    data[key]["name"] = dup_label
+                elif est:
+                    data[key]["name"] = est   # latest round's name wins
     if keyed and name_keyed:
         # mixed keying splits every student whose Clave-keyed and name-keyed
         # rows don't coincide — visible only here, so warn here (finding 5)
@@ -250,6 +554,7 @@ def rebuild_historico(wb, registry):
                 c = ws.cell(row=i, column=j, value=v)
                 c.number_format = "0.00"
     ws.freeze_panes = "B2"
+    build_seguimiento(wb, data, order, rounds, keyed_rounds, huella_rounds)
     return len(order), rounds
 
 
