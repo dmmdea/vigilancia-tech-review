@@ -119,9 +119,15 @@ maestro multi-ronda y una tabla de problemas frecuentes.
 
 ```bash
 git clone https://github.com/dmmdea/vigilancia-tech-review.git
-cd vigilancia-tech-review && pip install -r requirements.txt
-python scripts/preflight.py     # verifica los backends de verdad; debe decir LISTO
+cd vigilancia-tech-review
+powershell -ExecutionPolicy Bypass -File install.ps1   # Windows
+bash install.sh                                        # macOS / Linux
 ```
+
+El instalador pone lo que falte (Python 3.10+, ffmpeg, LibreOffice, las
+librerías) y termina corriendo `preflight.py`, que verifica los backends de
+verdad: no des la instalación por buena hasta ver `LISTO para correr`.
+INSTALL.md trae además prompts listos para que tu agente lo instale solo.
 
 ## Requisitos
 

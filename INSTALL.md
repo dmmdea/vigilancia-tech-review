@@ -5,33 +5,122 @@ harness**: el mismo `SKILL.md` y los mismos scripts corren en Claude Code,
 Codex (GPT) y Antigravity (Gemini). Lo único que cambia es cómo cada uno
 despacha a los revisores; eso está en `references/<tu-plataforma>.md`.
 
-> English speakers: this is the install guide; every section below has the
-> exact commands. The skill itself and all teacher-facing output are in
-> Spanish because the course is taught in Spanish.
+Hay dos caminos. **El rápido es el primero: pegarle un prompt a tu agente y
+que él lo haga.** El manual está más abajo por si algo falla o prefieres ver
+cada paso.
 
 ---
 
-## 1. Requisitos (iguales en las tres plataformas)
+## A. Que lo instale el agente (recomendado)
 
-| Qué | Para qué | Cómo verificar |
-|---|---|---|
-| **Python 3.10+** | todos los scripts | `python --version` |
-| **`pip install -r requirements.txt`** | `openpyxl` (Excel), `pypdf` (contar páginas), `pymupdf` (rasterizar) | ver abajo |
-| **LibreOffice** *o* **Microsoft Office** | `.pptx/.docx` → PDF | `soffice --version` |
-| **Chrome o Edge** | `.html` → PDF | ya viene en Windows |
-| **ffmpeg** | fotogramas de video, duración de audio | `ffmpeg -version` |
-| *(opcional)* un **whisper** local | transcribir audio y video hablado | ver §5 |
+Copia y pega el bloque de tu plataforma. El agente clona el repo, instala lo
+que falte (Python 3.10+, ffmpeg, LibreOffice, librerías) y termina
+verificando con `preflight.py`.
+
+### A.1 Claude Code
+
+```
+Instala el skill "vigilancia-tech-review" en esta máquina:
+
+1. Clónalo desde https://github.com/dmmdea/vigilancia-tech-review en la
+   carpeta de skills de Claude Code: en Windows
+   %USERPROFILE%\.claude\skills\vigilancia-tech-review, en macOS o Linux
+   ~/.claude/skills/vigilancia-tech-review. Si ya existe, haz git pull.
+2. Entra a esa carpeta e instala las dependencias del sistema y de Python
+   corriendo el instalador que trae el repo: en Windows
+   "powershell -ExecutionPolicy Bypass -File install.ps1", en macOS o Linux
+   "bash install.sh". El instalador se puede correr varias veces sin
+   problema y no toca lo que ya esté instalado.
+3. Cuando termine, corre "python scripts/preflight.py" y muéstrame la
+   salida. No des la instalación por buena hasta que imprima
+   "LISTO para correr".
+4. Dime qué quedó pendiente, si algo quedó pendiente.
+
+Al terminar, reinicia Claude Code para que el skill aparezca en /skills.
+```
+
+### A.2 Codex (GPT)
+
+```
+Instala el skill "vigilancia-tech-review" en esta máquina:
+
+1. Clona https://github.com/dmmdea/vigilancia-tech-review en
+   ~/skills/vigilancia-tech-review (si ya existe, git pull).
+2. Entra a la carpeta y corre el instalador del repo: en Windows
+   "powershell -ExecutionPolicy Bypass -File install.ps1", en macOS o Linux
+   "bash install.sh".
+3. Corre "python scripts/preflight.py" y muéstrame la salida completa. Debe
+   decir "LISTO para correr".
+4. Lee references/codex.md y resúmeme en tres líneas cómo se despacha un
+   revisor en Codex, para confirmar que lo tienes claro antes de la primera
+   corrida.
+```
+
+### A.3 Antigravity (Gemini)
+
+```
+Instala el skill "vigilancia-tech-review" en esta máquina:
+
+1. Clona https://github.com/dmmdea/vigilancia-tech-review en
+   ~/skills/vigilancia-tech-review (si ya existe, git pull).
+2. Entra a la carpeta y corre el instalador del repo: en Windows
+   "powershell -ExecutionPolicy Bypass -File install.ps1", en macOS o Linux
+   "bash install.sh".
+3. Corre "python scripts/preflight.py" y muéstrame la salida completa. Debe
+   decir "LISTO para correr".
+4. Lee references/antigravity.md y confírmame que entendiste dos cosas: que
+   hay que rasterizar los PDFs antes de repartir a los revisores, y que a
+   cada revisor se le dan RUTAS ABSOLUTAS.
+```
+
+### A.4 Y para correr una ronda, en cualquiera de los tres
+
+```
+Usa el skill vigilancia-tech-review para revisar las entregas de
+Vigilancia Tecnológica que están en <RUTA DE LA CARPETA O DEL .ZIP>.
+Sigue SKILL.md al pie de la letra, incluida la verificación adversarial de
+fechas, y entrégame el Excel de la ronda y el maestro actualizado.
+La ronda es "<Semana N>".
+```
+
+---
+
+## B. Instalación manual
+
+### B.1 Un solo comando
 
 ```bash
 git clone https://github.com/dmmdea/vigilancia-tech-review.git
 cd vigilancia-tech-review
-pip install -r requirements.txt
-python scripts/preflight.py     # dice OK/FALTA por cada dependencia
+
+# Windows
+powershell -ExecutionPolicy Bypass -File install.ps1
+# macOS / Linux
+bash install.sh
 ```
 
-`preflight.py` es la única verificación que hay que creerle: revisa los
-backends de verdad, no la documentación. **No arranques una corrida hasta
-que imprima `LISTO para correr`.**
+El instalador revisa qué falta y lo instala (Python 3.10+, ffmpeg,
+LibreOffice si no hay Office, y las librerías de Python), y termina corriendo
+`preflight.py`. **No des la instalación por buena hasta ver
+`LISTO para correr`.** Se puede volver a correr sin miedo: no toca lo que ya
+esté instalado.
+
+Si prefieres omitir LibreOffice porque ya tienes Microsoft Office:
+`install.ps1 -SinLibreOffice` · `SIN_LIBREOFFICE=1 bash install.sh`
+
+### B.2 Qué instala, y para qué
+
+| Qué | Para qué | Cómo verificar |
+|---|---|---|
+| **Python 3.10+** | todos los scripts | `python --version` |
+| `openpyxl`, `pypdf`, `pymupdf` | Excel, contar páginas, rasterizar | `pip list` |
+| **LibreOffice** *o* **Microsoft Office** | `.pptx/.docx` → PDF | `soffice --version` |
+| **Chrome o Edge** | `.html` → PDF | ya viene en Windows |
+| **ffmpeg** | fotogramas de video, duración de audio | `ffmpeg -version` |
+| *(opcional)* un **whisper** local | transcribir audio y video hablado | §5 |
+
+`preflight.py` es la única verificación en la que hay que confiar: prueba los
+backends de verdad, no la documentación.
 
 ### Windows: leer esto antes que nada
 Las carpetas de Canvas más los nombres de archivo de los estudiantes pasan
@@ -44,6 +133,15 @@ ffmpeg, Office COM) no lo aceptan**. Por eso:
 - Escribe el Excel con un nombre corto (`res.xlsx`) y cópialo al nombre final
   al entregar.
 
+### Si el instalador no puede con algo
+Lo dice al final, en la lista "FALTA POR RESOLVER", y sale con código 1. Las
+dos causas normales:
+- **`winget` no está disponible** (Windows viejo o sin App Installer):
+  instala Python, ffmpeg y LibreOffice a mano y vuelve a correr el script.
+- **Instaló Python pero la terminal sigue sin verlo**: el `PATH` de una
+  terminal ya abierta no cambia. Cierra la terminal, ábrela de nuevo y
+  vuelve a correr el instalador.
+
 ---
 
 ## 2. Claude Code
@@ -52,8 +150,8 @@ El skill se instala como carpeta de skill y Claude lo invoca solo cuando la
 tarea encaja.
 
 ```bash
-# Windows (PowerShell o Git Bash)
-git clone https://github.com/dmmdea/vigilancia-tech-review.git ^
+# Windows (PowerShell)
+git clone https://github.com/dmmdea/vigilancia-tech-review.git `
   "$env:USERPROFILE\.claude\skills\vigilancia-tech-review"
 
 # macOS / Linux
@@ -90,8 +188,7 @@ y él ejecuta los scripts.
 ```bash
 git clone https://github.com/dmmdea/vigilancia-tech-review.git ~/skills/vigilancia-tech-review
 cd ~/skills/vigilancia-tech-review
-pip install -r requirements.txt
-python scripts/preflight.py
+bash install.sh          # o install.ps1 en Windows
 ```
 
 Arranca la corrida dándole el SKILL.md y la carpeta de entregas:
@@ -130,7 +227,7 @@ Tres cosas que sí importan en Codex:
 
 ```bash
 git clone https://github.com/dmmdea/vigilancia-tech-review.git ~/skills/vigilancia-tech-review
-cd ~/skills/vigilancia-tech-review && pip install -r requirements.txt && python scripts/preflight.py
+cd ~/skills/vigilancia-tech-review && bash install.sh
 ```
 
 Antigravity 2.8.1 **no trae CLI**: las revisiones se despachan desde la
@@ -197,6 +294,33 @@ La política de nota para descalificadas se elige al generar el Excel:
 `--dq-policy=cap:3.0` (predeterminada) conserva visible la nota de rúbrica y
 limita la final a 3.0.
 
+### 6.1 Rondas viejas sin huella de contenido
+
+La columna `Huella` es la que permite demostrar que un estudiante reenvió el
+mismo archivo en vez de actualizar su caso. Las rondas generadas antes de que
+existiera esa columna no la traen, y la hoja `Seguimiento` tiene que degradar
+a `MISMO NOMBRE (verificar)`. Si los archivos de esa ronda **siguen en
+disco**, no hay que esperar a la siguiente:
+
+```bash
+python scripts/backfill_huella.py "<libro.xlsx>" \
+  --hoja="Ranking - Semana 3" \
+  --desde="<carpeta de Canvas o el .zip de la descarga>" \
+  --asignacion=<idTarea> --aplicar
+```
+
+Sin `--aplicar` es un ensayo: dice qué haría y no escribe nada.
+
+**`--asignacion` importa de verdad.** Una misma carpeta puede guardar dos
+tareas de Canvas (los mismos estudiantes, distinto `idTarea`), y tomar la
+huella de la ronda equivocada **inventa** una "entrega repetida" que nunca
+ocurrió. Pasó en los datos reales: sin ese filtro, 14 estudiantes salían
+acusados de reenviar el mismo archivo usando la huella de un archivo de otra
+ronda. Si la fuente mezcla tareas y no le dices cuál, el script se niega.
+
+El `idTarea` es la segunda mitad del nombre de la carpeta de Canvas:
+`11717-467275 - Juan David Pinto - ...` → `--asignacion=467275`.
+
 ---
 
 ## 7. Reglas que no se negocian
@@ -220,5 +344,6 @@ Están en `SKILL.md`, pero conviene que todo el equipo las tenga presentes:
 | `canvas_key` vacío para todos | El formato de fecha del export de Canvas cambió. Ya se soportan `11_58` y `1152`; si aparece otro, avisa: una clave vacía deja sin `Clave` toda la ronda y apaga la detección de duplicados. |
 | Un revisor correcto no pasa la compuerta | Nombres de archivo con tilde: el .zip los entrega en NFD y el modelo responde en NFC. Ya se normaliza; si vuelve a pasar, reporta el nombre exacto. |
 | `--only` sale con código 2 | Estás fusionando contra un `materials.json` que no existe. Corre primero **sin** `--only`. |
-| El Excel sale sin la columna `Huella` | Es una ronda vieja generada antes de esta versión. No es error: el `Seguimiento` degrada a `MISMO NOMBRE` y pide verificar a mano. |
+| El Excel sale sin la columna `Huella` | Es una ronda vieja generada antes de esta versión. Rellénala con `backfill_huella.py` (§6.1) si los archivos siguen en disco; si no, el `Seguimiento` degrada a `MISMO NOMBRE` y pide verificar a mano. |
+| `backfill_huella.py` se niega diciendo que la fuente mezcla tareas | Es a propósito: pásale `--asignacion=<idTarea>` (§6.1). |
 | Una opción mal escrita | Los scripts **rechazan** banderas desconocidas en vez de ignorarlas. Lee el mensaje: te dice cuál era la correcta. |

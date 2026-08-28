@@ -118,9 +118,15 @@ transcription step, delivery into the multi-round master, and a troubleshooting 
 
 ```bash
 git clone https://github.com/dmmdea/vigilancia-tech-review.git
-cd vigilancia-tech-review && pip install -r requirements.txt
-python scripts/preflight.py     # verifies every backend for real; must print LISTO
+cd vigilancia-tech-review
+powershell -ExecutionPolicy Bypass -File install.ps1   # Windows
+bash install.sh                                        # macOS / Linux
 ```
+
+The installer adds whatever is missing (Python 3.10+, ffmpeg, LibreOffice, the
+Python libraries) and finishes by running `preflight.py`, which verifies every
+backend for real. Don't treat the install as done until it prints `LISTO para
+correr`. INSTALL.md also has ready-made prompts so your agent installs it for you.
 
 Requirements: Python 3.10+ · a slides→PDF backend (LibreOffice or MS Office COM) ·
 headless Chrome/Edge for HTML · `ffmpeg` for video and audio duration. Windows users:
