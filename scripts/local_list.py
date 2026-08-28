@@ -196,7 +196,10 @@ def huella(path, size):
                 h.update(f.read(chunk))
     except OSError:
         return None
-    return h.hexdigest()[:16]
+    # 128 bits, not 64: a collision here would report a student as having
+    # resubmitted work they actually rewrote, and the extra 16 characters
+    # cost nothing
+    return h.hexdigest()[:32]
 
 
 def collect_files(folder, notes=None, depth=1):

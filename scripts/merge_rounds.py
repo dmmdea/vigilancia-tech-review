@@ -172,6 +172,21 @@ SEG_FILL_DUDA = PatternFill("solid", fgColor="E5E7EB")    # sin confirmar
 NOTA_MINIMA = 3.0      # nota aprobatoria del curso
 
 
+def _sin_archivo(nombre):
+    """True when the row is a placeholder the assembler synthesised because
+    the folder held NO file at all.
+
+    assemble_results.py emits these wrapped in parentheses and without an
+    extension ("(carpeta sin archivos)", "(<estudiante> — inconsistencia de
+    entradas)"). They must NOT count as a delivery: an empty Canvas folder is
+    precisely a student who did not hand anything in, and counting it would
+    clear the most common real case this sheet exists to catch. An unreadable
+    FILE is different and does count — the student did the work.
+    """
+    n = str(nombre or "").strip()
+    return n.startswith("(") and n.endswith(")")
+
+
 def _norm_archivo(name):
     """Compare submissions by file name, accent-normalised and case-folded.
 
@@ -226,7 +241,9 @@ def build_seguimiento(wb, data, order, rounds, keyed_rounds=None,
     for key in order:
         d = data[key]
         rows = d.get("rows") or {}
-        if actual not in rows and not any(r in rows for r in previas):
+        vistos = d.get("vistos") or set()
+        if actual not in rows and not any(r in rows for r in previas) \
+                and actual not in vistos:
             continue                      # never seen anywhere: no evidence
         entregadas = [r for r in rounds if r in rows]
         # consecutive missed rounds ending at the most recent one
@@ -243,6 +260,7 @@ def build_seguimiento(wb, data, order, rounds, keyed_rounds=None,
         # an absence is only assertable between rounds where THIS student
         # was identified by Clave; a name-keyed earlier row cannot be told
         # apart from an identifier mismatch
+        carpeta_vacia = False
         comparables = [r for r in previas
                        if r in rows and rows[r].get("con_clave")]
         if actual in rows:
@@ -266,13 +284,22 @@ def build_seguimiento(wb, data, order, rounds, keyed_rounds=None,
                 estado = "MISMO NOMBRE"          # no fingerprint: verify
             else:
                 estado = "ENTREGÓ"
+        elif actual in vistos:
+            # DIRECT evidence: the student has a folder in this round and it
+            # holds no file. No cross-round identity matching is needed, so
+            # this is confirmed no matter how the rounds are keyed.
+            estado = "SIN ENTREGA"
+            carpeta_vacia = True
         elif actual in keyed_rounds and comparables:
             estado = "SIN ENTREGA"
         else:
             estado = "SIN CONFIRMAR"
 
         alerta = []
-        if estado == "SIN ENTREGA":
+        if estado == "SIN ENTREGA" and carpeta_vacia:
+            alerta.append(f"su carpeta de {actual} está vacía: no entregó "
+                          "nada esta ronda")
+        elif estado == "SIN ENTREGA":
             alerta.append(f"no entregó en {actual}"
                           + (f" ({seguidas} rondas seguidas)" if seguidas > 1 else ""))
         elif estado == "SIN CONFIRMAR":
@@ -435,39 +462,32 @@ def rebuild_historico(wb, registry):
         # SUBMITTED. Reporting them as "sin entrega" would send a teacher to
         # scold someone who did the work, so presence is recorded from every
         # row of the round, not only the graded ones.
+        # ONE pass: the identity of a row is decided once and used for both
+        # its grade and its delivery record. Two passes could disagree — a
+        # duplicate split into a tuple key by the grading side while the
+        # presence side kept the plain key left one student invisible to the
+        # Seguimiento sheet and cleared another who had stopped submitting.
         for row in ws.iter_rows(min_row=2, values_only=True):
-            est_p = (row[i_est] or "").strip()
-            key_p = ((row[i_key] or "").strip()
-                     if i_key is not None else "") or est_p
-            estado_p = row[i_st]
+            est = (row[i_est] or "").strip()
+            key = ((row[i_key] or "").strip()
+                   if i_key is not None else "") or est
+            if not key:
+                continue
+            estado = row[i_st]
+            if estado == "REEMPLAZADA":
+                # a superseded duplicate is neither a grade nor a delivery,
+                # and must not create a student row of its own
+                continue
             # did THIS row carry a real Clave value? A round can have the
             # column while individual rows leave it empty (the partially
             # keyed Semana 2), and those rows fall back to the display name
-            con_clave = bool(i_key is not None
-                             and (row[i_key] or "").strip())
-            if not key_p or estado_p == "REEMPLAZADA":
-                # a superseded duplicate is not a separate delivery
-                continue
-            slot = data.setdefault(key_p, {"name": est_p, "grades": {},
-                                           "rows": {}})
-            if key_p not in order:
-                order.append(key_p)
-            prev = slot["rows"].get(name)
+            con_clave = bool(i_key is not None and (row[i_key] or "").strip())
             arch = (row[i_arch] or "").strip() if i_arch is not None else ""
             hue = (row[i_hue] or "").strip() if i_hue is not None else ""
-            # the graded row wins the slot; an annex row only fills a gap
-            if prev is None or (estado_p == "REVISADO"
-                                and prev.get("estado") != "REVISADO"):
-                slot["rows"][name] = {"estado": estado_p, "archivo": arch,
-                                      "huella": hue, "con_clave": con_clave}
-        for row in ws.iter_rows(min_row=2, values_only=True):
-            if row[i_st] != "REVISADO":
-                continue
-            est = (row[i_est] or "").strip()
-            key = ((row[i_key] or "").strip() if i_key is not None else "") or est
-            if not key:
-                continue
-            if key in data and name in data[key]["grades"]:
+
+            dup_label = None
+            if estado == "REVISADO" and key in data \
+                    and name in data[key]["grades"]:
                 # two REVISADO rows in the SAME round collapsing onto one
                 # key (blank Clave + shared display name) would silently
                 # drop a grade — disambiguate with a TUPLE key, which can
@@ -483,18 +503,31 @@ def rebuild_historico(wb, registry):
                 while (base, n) in data and name in data[(base, n)]["grades"]:
                     n += 1
                 key = (base, n)
-                if key not in data:
-                    data[key] = {"name": f"{est} (fila duplicada {n})",
-                                 "grades": {}, "rows": {}}
-                    order.append(key)
-                data[key]["grades"][name] = row[i_fin]
-                continue    # keep the duplicate's marked display name
+                dup_label = f"{est} (fila duplicada {n})"
             if key not in data:
-                data[key] = {"name": est, "grades": {}, "rows": {}}
+                data[key] = {"name": dup_label or est, "grades": {},
+                             "rows": {}, "vistos": set()}
                 order.append(key)
-            data[key]["grades"][name] = row[i_fin]
-            if est:
-                data[key]["name"] = est     # latest round's display name wins
+            data[key].setdefault("vistos", set())
+
+            # Canvas made this student a folder, so we know they exist in
+            # the round even when the folder turned out to be empty.
+            data[key]["vistos"].add(name)
+            if not _sin_archivo(arch):
+                prev = data[key]["rows"].get(name)
+                # the graded row wins the slot; an annex only fills a gap
+                if prev is None or (estado == "REVISADO"
+                                    and prev.get("estado") != "REVISADO"):
+                    data[key]["rows"][name] = {
+                        "estado": estado, "archivo": arch, "huella": hue,
+                        "con_clave": con_clave}
+
+            if estado == "REVISADO":
+                data[key]["grades"][name] = row[i_fin]
+                if dup_label:
+                    data[key]["name"] = dup_label
+                elif est:
+                    data[key]["name"] = est   # latest round's name wins
     if keyed and name_keyed:
         # mixed keying splits every student whose Clave-keyed and name-keyed
         # rows don't coincide — visible only here, so warn here (finding 5)

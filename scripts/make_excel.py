@@ -105,7 +105,7 @@ RANK_COLS = [
     ("Razón DQ", 30), ("PoC (50%)", 10), ("Impacto (25%)", 10),
     ("Comunicación (25%)", 12), ("Nota rúbrica", 10), ("Nota final", 10),
     ("Indicio IA (1-5)", 10),
-    ("Huella", 18),
+    ("Huella", 34),
     ("Flags revisión humana", 28),
     ("Estado", 16), ("Detalle estado", 30),
 ]
