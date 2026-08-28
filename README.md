@@ -110,10 +110,20 @@ Harnesses without native PDF-page vision use the bundled rasterizer
 | `references/` | Platform adapters |
 | `docs/specs/` | Design/run plans |
 
-## Requirements
+## Install
 
-Python 3.10+ · `pip install -r requirements.txt` · a slides→PDF backend (LibreOffice or
-MS Office COM) · headless Chrome/Edge for HTML · `ffmpeg` for videos. Windows users:
+**[INSTALL.md](INSTALL.md) has step-by-step instructions for all three supported
+harnesses** — Claude Code, Codex (GPT) and Antigravity (Gemini) — plus the audio
+transcription step, delivery into the multi-round master, and a troubleshooting table.
+
+```bash
+git clone https://github.com/dmmdea/vigilancia-tech-review.git
+cd vigilancia-tech-review && pip install -r requirements.txt
+python scripts/preflight.py     # verifies every backend for real; must print LISTO
+```
+
+Requirements: Python 3.10+ · a slides→PDF backend (LibreOffice or MS Office COM) ·
+headless Chrome/Edge for HTML · `ffmpeg` for video and audio duration. Windows users:
 read the MAX_PATH section in `SKILL.md` before anything else.
 
 ## License

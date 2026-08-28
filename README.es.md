@@ -111,6 +111,18 @@ Los harnesses sin visión nativa de páginas PDF usan el rasterizador incluido
 | `references/` | Adaptadores por plataforma |
 | `docs/specs/` | Planes de diseño y de corrida |
 
+## Instalación
+
+**[INSTALL.md](INSTALL.md) tiene el paso a paso para las tres plataformas**
+(Claude Code, Codex y Antigravity), la transcripción de audio, la entrega al
+maestro multi-ronda y una tabla de problemas frecuentes.
+
+```bash
+git clone https://github.com/dmmdea/vigilancia-tech-review.git
+cd vigilancia-tech-review && pip install -r requirements.txt
+python scripts/preflight.py     # verifica los backends de verdad; debe decir LISTO
+```
+
 ## Requisitos
 
 Python 3.10+ · `pip install -r requirements.txt` · backend diapositivas→PDF
