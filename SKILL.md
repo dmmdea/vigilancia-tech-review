@@ -157,6 +157,11 @@ where the harness's file tool cannot open the format (never "convert" a PNG):
 | `.xlsx .xls .csv` | `.txt` cell dump | data reads better as data |
 | `.mp4 .mov …` | keyframes (+ transcript) | the reviewer's own vision judges the frames |
 | `.mp3 .wav .m4a …` | duration/size + optional transcript | **no image to look at** — see the audio rule below |
+
+Every submitted file also gets a content fingerprint (`huella`), carried into
+the Excel's `Huella` column. That is what lets a later round prove a student
+resubmitted the very same file instead of updating their case — a filename
+cannot, since students routinely keep the name and rewrite the deck.
 | `.zip` | extracted, contents re-routed | — |
 | `.py .txt .md` | passthrough | text |
 
@@ -314,9 +319,32 @@ python "$SKILL_DIR/scripts/merge_rounds.py" "<delivery>/Resultados-Vigilancia-Te
 ```
 
 Adds this round as its own sheet trio (`Ranking - Semana N`, `Detalle - …`,
-`Meta - …`) and rebuilds the `Histórico` sheet (final grade per student per
-round). Re-delivering the SAME round replaces only that round's sheets;
-**sheets of other rounds are never touched or deleted.** The master lives in
+`Meta - …`) and rebuilds two cross-round sheets: `Histórico` (final grade per
+student per round) and **`Seguimiento`** — who did NOT hand in something new.
+Re-delivering the SAME round replaces only that round's sheets;
+**sheets of other rounds are never touched or deleted.**
+
+**`Seguimiento` (TA request, 2026-08-28: "los estudiantes que no han hecho
+nuevos envíos… si un estudiante se rehúsa a actualizar su caso y va mal, les
+podemos dar retroalimentación").** One row per student, worst cases first,
+with the grade history beside the status so "no entregó AND is failing" is
+visible at a glance:
+
+| Estado | Significa |
+|---|---|
+| `SIN ENTREGA` | absent this round, and their earlier rounds share the stable `Clave`, so the absence is confirmed |
+| `SIN CONFIRMAR` | absent, but the comparison crosses rounds without `Clave` — could be an identifier mismatch, **not** proof they skipped. Flags the row that DID submit under the same name when there is one |
+| `ENTREGA REPETIDA` | resubmitted a file with an identical content fingerprint: the case did not move |
+| `MISMO NOMBRE` | same filename but no fingerprint to compare — verify by hand before writing to the student |
+| `ENTREGÓ` | handed in something new |
+
+Two things it refuses to do, because both would send a teacher to reproach a
+student who did the work: assert an absence across differently-keyed rounds
+(on the real Semana 2 ↔ 3 master, 25 of 52 apparent absences were that split,
+and three of those students had in fact submitted), and call a resubmission
+"repeated" on the filename alone. A student who has never appeared in ANY
+round cannot be listed — this workbook holds submissions, not the roster — and
+the sheet says so instead of guessing. The master lives in
 the Drive-synced delivery folder the user confirmed.
 
 ### 8. Report

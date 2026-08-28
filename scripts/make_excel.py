@@ -105,6 +105,7 @@ RANK_COLS = [
     ("Razón DQ", 30), ("PoC (50%)", 10), ("Impacto (25%)", 10),
     ("Comunicación (25%)", 12), ("Nota rúbrica", 10), ("Nota final", 10),
     ("Indicio IA (1-5)", 10),
+    ("Huella", 18),
     ("Flags revisión humana", 28),
     ("Estado", 16), ("Detalle estado", 30),
 ]
@@ -333,6 +334,7 @@ def main() -> None:
             r.get("_rubric") if r.get("_rubric") is not None else "",
             r["_final"] if r["_final"] is not None else "",
             r.get("indicio_ia", ""),
+            r.get("huella", "") or "",
             ", ".join(r.get("flags", [])),
             estado,
             r.get("status_reason", ""),
