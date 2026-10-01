@@ -164,3 +164,14 @@ Fuera de alcance (propuestas, no construidas): cruce con el listado oficial de
 estudiantes por código (los TAs lo hicieron a mano con VLOOKUP: "No veo
 trabajo", "Retirado"); subir el umbral de DQ a 4.5 meses (los TAs aceptaron
 lanzamientos de abril a 4.2-4.3 meses).
+
+## Round 4 — entrega final (R25-R27, 2026-10-01)
+
+La entrega final es la única que cuenta para la nota de la actividad, y se
+califica días después del cierre.
+
+| # | Request / hallazgo | Diseño |
+|---|---|---|
+| R25 | Equipo docente: "mejorele la retroalimentación. Dos cosas buenas y dos por mejorar y ya… que no escriba mil cosas" (medido: el `feedback_sugerido` libre de la ronda anterior promediaba 71 palabras, máximo 184, con aperturas de elogio) | Campo `retroalimentacion: {fortalezas: [2], por_mejorar: [2]}` en templates + schema; `validate_review.py --require-extended` exige 2+2, una idea por frase (≤15 pedidas, 20 tope duro) y rechaza primera persona del revisor, elogios de fórmula, rayas, puntajes y "para la próxima"; celda lista para copiar junto a `Nota final`. `feedback_sugerido` queda solo como lectura de corridas viejas |
+| R26 | Daniel: "carrying the same tool forward was valid, they only had the option to do one last update" — medir la edad a la fecha de corrida descalificaba a estudiantes cuya herramienta era válida cuando la eligieron | Fecha ancla = primera ronda con la misma herramienta (o la fecha de entrega si es nueva), nunca la fecha de corrida. `build_history.py` arma el historial por `Clave` desde los maestros entregados; el revisor elige el ancla entre las permitidas; el validador verifica ancla, orden de fechas y aritmética; el ensamblador marca `ancla_decisiva` y las anclas dudosas; 5bis pregunta si es de verdad la misma herramienta (en ambas direcciones) |
+| R27 | Entregas en Keynote (.key): PowerPoint no las abre y no hay LibreOffice → el estudiante quedaba NO REVISADO por formato, contra la regla de equidad | `keynote_extract.py` (solo biblioteca estándar): orden real de láminas desde el árbol del documento, texto por lámina, miniatura, imágenes a resolución completa y videos embebidos por la ruta de video |

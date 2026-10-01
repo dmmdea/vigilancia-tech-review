@@ -8,6 +8,12 @@ all — never to "simplify" something Read already handles.
 
   .pdf                -> as-is                        (vision)
   .pptx .ppt .odp     -> PowerPoint/LibreOffice -> PDF (vision)
+  .key (Apple Keynote) -> rebuilt slide by slide by keynote_extract.py: the
+                         text of every slide + its thumbnail + the images
+                         placed on it at full resolution; embedded movies go
+                         through the video path below. Neither PowerPoint nor
+                         a stock LibreOffice opens modern .key files, and a
+                         deck is a deck: format never skips a student.
   .docx .doc .rtf     -> Word/LibreOffice -> PDF       (vision; KEEPS the
                          screenshots students embed as their PoC evidence —
                          text extraction would silently drop exactly the
@@ -93,8 +99,11 @@ TEXT_EXT = {".py", ".txt", ".md", ".json", ".log", ".sql", ".js", ".ts", ".csv"}
 DOC_EXT = {".docx", ".doc", ".rtf", ".odt"}
 HTML_EXT = {".html", ".htm"}
 SLIDE_EXT = {".pptx", ".ppt", ".odp"}
+KEYNOTE_EXT = {".key"}
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+import keynote_extract  # noqa: E402  (sibling module, stdlib only)
 
 
 def longpath(p: str) -> str:
@@ -388,6 +397,30 @@ def process_file(fr, folder_id, items, matroot, prefix=""):
             dst = os.path.join(base, f"{tag}.pdf")
             good, err = slides_to_pdf(local, dst)
             ok_pdf(dst) if good else fail(f"conversión de diapositivas falló: {err}")
+        elif ext in KEYNOTE_EXT:
+            local = stage(src, os.path.join(base, f"{tag}_src.key"))
+            kdir = os.path.join(base, f"{tag}_key")
+            try:
+                deck = keynote_extract.extract(longpath(local), kdir,
+                                               ffmpeg=FFMPEG)
+            except Exception as e:
+                fail(f"Keynote ilegible ({e}) — revisar manualmente")
+                return
+            items.append({"kind": "keynote", "label": name,
+                          "slides": deck["slides"],
+                          "loose_images": deck["loose_images"],
+                          "text_path": deck["text_path"],
+                          "order_exact": deck["order_exact"],
+                          "note": deck["note"]})
+            # movies placed on the slides (typically the tool's own output):
+            # same keyframes(+transcript) path as any submitted video
+            for mv in deck["movies"]:
+                where = (f"lámina {mv['slide']}" if mv.get("slide")
+                         else "sin lámina identificada")
+                process_file({"name": f"{name} :: {mv['name']} ({where})",
+                              "ext": os.path.splitext(mv["path"])[1].lower(),
+                              "path": mv["path"]},
+                             folder_id, items, matroot, prefix="k")
         elif ext in DOC_EXT:
             local = stage(src, os.path.join(base, f"{tag}_src{ext}"))
             dst = os.path.join(base, f"{tag}.pdf")

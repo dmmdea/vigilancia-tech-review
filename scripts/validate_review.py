@@ -15,7 +15,9 @@ Usage:
                                         # appear in materials_reviewed ('|'-sep)
         [--normalized-out=<path>]       # write the cleaned/normalized review
         [--require-extended]            # enforce indicio_ia (1-5) +
-                                        # feedback_sugerido (fresh reviews)
+                                        # retroalimentacion 2+2 (fresh reviews)
+        [--anchor-dates=d1|d2|...]      # the student's allowed fechas ancla
+                                        # (historial.json anclas_permitidas)
 
 Checks (each one occurred in real output in the 2026-08-14 pilot run):
   * scores in [1.0, 5.0]; justifications non-empty.
@@ -33,6 +35,19 @@ Checks (each one occurred in real output in the 2026-08-14 pilot run):
     move into `observations` (the pilot produced 104 distinct flags, 99 used
     once — unusable for TA filtering). Content is never lost, only
     relocated. Scores and justifications are NEVER edited.
+  * RETROALIMENTACION (--require-extended): exactly two `fortalezas` and two
+    `por_mejorar`, each ONE short phrase (hard cap 20 words; the prompt asks
+    for 15). Teaching team, 2026-10-01: "dos cosas buenas y dos por mejorar y
+    ya… que no escriba mil cosas" — the previous free-form 2-4 sentences ran
+    71 words on average and up to 184. Rejected inside a phrase: first person
+    of the reviewer, praise formulas, em dashes, scores, "para la próxima",
+    and chained ideas (semicolons / line breaks).
+  * FECHA ANCLA (--anchor-dates): the tool's age is measured from the first
+    round in which the student presented that same tool, or from their own
+    submission date for a new tool — never from the run date. `fecha_ancla`
+    must be one of the allowed dates, the verified launch cannot be later
+    than it, and `age_months` must match the two dates (±0.3 months; ±0.6
+    when the launch date is month-precision).
 
 Canonical flags (the only ones that stay in `flags`):
   VERIFICAR FECHA · DISCREPANCIA FECHA · ENTREGA SIN PPT · ENTREGA DUPLICADA
@@ -48,6 +63,7 @@ import json
 import re
 import sys
 import unicodedata
+from datetime import date
 
 for _s in (sys.stdout, sys.stderr):
     if _s in (sys.__stdout__, sys.__stderr__) and hasattr(_s, "reconfigure"):
@@ -73,6 +89,90 @@ DATE_ES = re.compile(r"(\d{1,2})\s+de\s+(" + "|".join(MESES) + r")\s+(?:de\s+)?(
                      re.IGNORECASE)
 DATE_DMY = re.compile(r"\b(\d{1,2})/(\d{1,2})/(\d{4})\b")
 STUDENT_OK = re.compile(r"^[^()]{0,60}(\(c[oó]digo [\w]+\))?$", re.IGNORECASE)
+
+# --- retroalimentación (R25) -------------------------------------------------
+RETRO_PARTS = (("fortalezas", "fortaleza"), ("por_mejorar", "por mejorar"))
+RETRO_MAX_WORDS = 20          # hard cap; the prompt asks for 15
+RETRO_BULLET = re.compile(r"^\s*(?:[-•*·▪●]+|\d+\s*[.)])\s*")
+# How the monitores do NOT write (vtr voice notes): the reviewer narrating
+# itself, praise formulas, em dashes, grades inside the text, a "next time"
+# closer that means nothing on a final submission. Only unambiguous forms:
+# accented first-person preterites, so an imperative like "revise" passes.
+RETRO_BANNED = (
+    (re.compile(r"\b(revisé|leí|encontré|noté|observé|considero|me parece|"
+                r"creo que|en mi opinión|veo que|vi que)\b", re.IGNORECASE),
+     "primera persona del revisor"),
+    (re.compile(r"\b(?:muy\s+)?(?:buen|excelente|gran)\s+trabajo\b|"
+                r"\bfelicitaciones\b|\bfelicito\b", re.IGNORECASE),
+     "fórmula de elogio"),
+    (re.compile(r"\bpara la pr[oó]xima\b", re.IGNORECASE),
+     "cierre 'para la próxima'"),
+    (re.compile(r"\b\d(?:[.,]\d+)?\s*/\s*5\b|\bpuntaje\b|\bsobre 5\b",
+                re.IGNORECASE), "nota o puntaje dentro del texto"),
+    (re.compile("—"), "raya (—)"),
+)
+
+
+def _as_date(s):
+    """'YYYY-MM-DD' -> (date, 'dia'); 'YYYY-MM' -> (15th of month, 'mes')."""
+    m = re.match(r"^(\d{4})-(\d{2})(?:-(\d{2}))?$", (s or "").strip())
+    if not m:
+        return None, None
+    try:
+        return (date(int(m.group(1)), int(m.group(2)),
+                     int(m.group(3)) if m.group(3) else 15),
+                "dia" if m.group(3) else "mes")
+    except ValueError:
+        return None, None
+
+
+def months_between(launch, anchor):
+    """Age in months, the reviewers' convention: days / 30.44."""
+    return (anchor - launch).days / 30.4375
+
+
+def _normalize_retro(r):
+    """Soft fixes only: list shape, bullets/numbering, surrounding spaces.
+    Returns the problems a strict (fresh-review) gate would raise."""
+    problems = []
+    rt = r.get("retroalimentacion")
+    if not isinstance(rt, dict):
+        return ["retroalimentacion ausente o con otra forma (requerido: "
+                "{\"fortalezas\": [2 frases], \"por_mejorar\": [2 frases]})"]
+    seen = []
+    for key, label in RETRO_PARTS:
+        items = rt.get(key)
+        if isinstance(items, str):
+            items = [items]
+        if not isinstance(items, list):
+            items = []
+        clean = []
+        for s in items:
+            s = RETRO_BULLET.sub("", str(s or "")).strip()
+            if s:
+                clean.append(s)
+        rt[key] = clean
+        if len(clean) != 2:
+            problems.append(f"retroalimentacion.{key}: {len(clean)} frase(s) "
+                            "— deben ser EXACTAMENTE 2")
+        for i, s in enumerate(clean, 1):
+            n = len(s.split())
+            if n > RETRO_MAX_WORDS:
+                problems.append(f"{label} {i}: {n} palabras — una frase corta "
+                                f"(máximo 15; tope duro {RETRO_MAX_WORDS})")
+            if ";" in s or "\n" in s:
+                problems.append(f"{label} {i}: una sola idea por frase (sin "
+                                "punto y coma ni saltos de línea)")
+            for rx, what in RETRO_BANNED:
+                m = rx.search(s)
+                if m:
+                    problems.append(f"{label} {i}: {what} ({m.group(0)!r})")
+            k = s.casefold().rstrip(".")
+            if k in seen:
+                problems.append(f"{label} {i}: frase repetida")
+            seen.append(k)
+    r["retroalimentacion"] = rt
+    return problems
 
 
 def find_dates(text):
@@ -118,17 +218,21 @@ FLAG_ALIASES = {
 
 
 def normalize_review(r, expect_pages=None, expect_materials=None,
-                     require_extended=False):
+                     require_extended=False, anchor_dates=None):
     """Validate + normalize IN PLACE. Returns (problems, moved) lists.
 
     problems -> the review must be retried/rejected (hard failures; nothing
     is auto-fixed for these). moved -> fields whose out-of-format content was
     relocated to `observations` (soft fixes; content preserved).
 
-    require_extended: enforce the class-1 feedback fields (`indicio_ia`
-    integer 1-5 and non-empty `feedback_sugerido`) as HARD requirements —
+    require_extended: enforce the class-feedback fields (`indicio_ia`
+    integer 1-5 and the 2+2 `retroalimentacion`) as HARD requirements —
     orchestrators pass this on fresh per-review calls; assembly re-validation
-    leaves it off so pre-extension review sets keep working.
+    leaves it off so pre-extension review sets (which carry the older
+    free-form `feedback_sugerido`) keep working.
+
+    anchor_dates: the student's allowed `fecha_ancla` values; when given, the
+    anchor and the age arithmetic are checked (None = pre-anchor review set).
     """
     problems = []
     moved = []
@@ -256,11 +360,44 @@ def normalize_review(r, expect_pages=None, expect_materials=None,
         ia = None
     if isinstance(ia, int) and not 1 <= ia <= 5:
         problems.append(f"indicio_ia fuera de rango 1-5: {ia}")
+    retro_problems = (_normalize_retro(r) if "retroalimentacion" in r
+                      or require_extended else [])
     if require_extended:
         if not isinstance(ia, int):
             problems.append("indicio_ia ausente o no entero (requerido: 1-5)")
-        if not (r.get("feedback_sugerido") or "").strip():
-            problems.append("feedback_sugerido vacío (requerido: 2-4 frases)")
+        problems.extend(retro_problems)
+
+    # --- fecha ancla (R26) ----------------------------------------------------
+    if anchor_dates is not None:
+        fa = str(r.get("fecha_ancla") or "").strip()
+        r["fecha_ancla"] = fa
+        if fa not in anchor_dates:
+            problems.append(f"fecha_ancla {fa!r} no es una de las permitidas "
+                            f"({' | '.join(anchor_dates)}) — la edad se mide "
+                            "desde la primera ronda con la misma herramienta "
+                            "o desde la fecha de entrega, nunca otra fecha")
+        if not str(r.get("ancla_motivo") or "").strip():
+            problems.append("ancla_motivo vacío — di 'misma herramienta desde "
+                            "<ronda>' o 'herramienta nueva en esta entrega'")
+        anchor, _ = _as_date(fa)
+        launch, prec = _as_date(r.get("verified_launch_date"))
+        if anchor and launch and conf in ("alta", "media"):
+            # month precision: the launch month may equal the anchor month
+            later = ((launch.year, launch.month) > (anchor.year, anchor.month)
+                     if prec == "mes" else launch > anchor)
+            if later:
+                problems.append(
+                    f"verified_launch_date {r.get('verified_launch_date')} es "
+                    f"POSTERIOR a fecha_ancla {fa}: lo que se lanzó después de "
+                    "esa ronda no puede ser lo que el estudiante presentó en "
+                    "ella — usa la ronda correcta o la fecha de entrega")
+            elif isinstance(age, (int, float)):
+                expected = months_between(launch, anchor)
+                tol = 0.3 if prec == "dia" else 0.6
+                if abs(age - expected) > tol:
+                    problems.append(
+                        f"age_months={age} no coincide con fecha_ancla − "
+                        f"fecha verificada ({expected:.1f} meses; días/30.44)")
 
     # --- tool length --------------------------------------------------------
     tool = (r.get("tool") or "").strip()
@@ -312,10 +449,11 @@ def main():
         sys.exit(1)
     expect_pages = None
     expect_materials = None
+    anchor_dates = None
     out_path = None
     require_extended = "--require-extended" in sys.argv[1:]
     KNOWN = ("--expect-pages=", "--expect-materials=", "--normalized-out=",
-             "--require-extended")
+             "--require-extended", "--anchor-dates=")
     for a in sys.argv[1:]:
         if a.startswith("--") and not a.startswith(KNOWN):
             # A typo'd flag must never silently DISABLE a fairness check —
@@ -332,6 +470,18 @@ def main():
             expect_materials = [m for m in a.split("=", 1)[1].split("|") if m]
         elif a.startswith("--normalized-out="):
             out_path = a.split("=", 1)[1]
+        elif a.startswith("--anchor-dates="):
+            anchor_dates = [d.strip() for d in a.split("=", 1)[1].split("|")
+                            if d.strip()]
+            if not anchor_dates or not all(_as_date(d)[1] == "dia"
+                                           for d in anchor_dates):
+                # an empty/garbled list would reject every anchor — or, worse,
+                # a typo'd one would silently skip the check
+                print(json.dumps({"ok": False, "problems": [
+                    f"--anchor-dates inválido: {a!r} (YYYY-MM-DD separadas "
+                    "por |)"], "moved_to_observations": []},
+                    ensure_ascii=False))
+                sys.exit(1)
 
     try:
         with open(args[0], encoding="utf-8") as f:
@@ -342,7 +492,8 @@ def main():
         sys.exit(2)
 
     problems, moved = normalize_review(r, expect_pages, expect_materials,
-                                       require_extended=require_extended)
+                                       require_extended=require_extended,
+                                       anchor_dates=anchor_dates)
     if out_path:
         with open(out_path, "w", encoding="utf-8") as f:
             json.dump(r, f, ensure_ascii=False, indent=2)

@@ -28,6 +28,12 @@
     "baja"
    ]
   },
+  "fecha_ancla": {
+   "type": "string"
+  },
+  "ancla_motivo": {
+   "type": "string"
+  },
   "age_months": {
    "type": [
     "number",
@@ -115,8 +121,31 @@
   "indicio_ia_evidencia": {
    "type": "string"
   },
-  "feedback_sugerido": {
-   "type": "string"
+  "retroalimentacion": {
+   "type": "object",
+   "additionalProperties": false,
+   "properties": {
+    "fortalezas": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     },
+     "minItems": 2,
+     "maxItems": 2
+    },
+    "por_mejorar": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     },
+     "minItems": 2,
+     "maxItems": 2
+    }
+   },
+   "required": [
+    "fortalezas",
+    "por_mejorar"
+   ]
   }
  },
  "required": [
@@ -127,6 +156,8 @@
   "verified_launch_date",
   "verification_source",
   "verification_confidence",
+  "fecha_ancla",
+  "ancla_motivo",
   "age_months",
   "disqualified",
   "dq_reason",
@@ -139,6 +170,6 @@
   "evidence_notes",
   "indicio_ia",
   "indicio_ia_evidencia",
-  "feedback_sugerido"
+  "retroalimentacion"
  ]
 }

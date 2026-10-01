@@ -183,6 +183,35 @@ def describe(items, use_images):
                       "evidence_notes.\n"
                       "   En ningún caso inventes lo que se oye."
                     + suffix)
+        elif k == "keynote":
+            slides = it.get("slides") or []
+            order = ("en el orden de la presentación" if it.get("order_exact")
+                     else "en orden APROXIMADO (no se pudo leer el orden "
+                          "exacto: no castigues la narrativa por el orden)")
+            rows = []
+            for s in slides:
+                th = (f"miniatura `{s['thumb']}`" if s.get("thumb")
+                      else "sin miniatura")
+                imgs = "".join(f"\n       · imagen de la lámina: `{p}`"
+                               for p in s.get("images") or [])
+                rows.append(f"     - Lámina {s['n']}: {th}{imgs}")
+            loose = "".join(f"\n     - imagen sin lámina identificada: `{p}`"
+                            for p in it.get("loose_images") or [])
+            lines.append(
+                f"{n}. [PRESENTACIÓN KEYNOTE] «{label}» — {len(slides)} "
+                f"láminas, {order}.\n"
+                "   Es una presentación de diapositivas en formato Apple "
+                "Keynote, reconstruida lámina por lámina porque el .key no "
+                "se puede abrir aquí. Debes:\n"
+                f"   a) Leer el texto COMPLETO de todas las láminas: "
+                f"`{it.get('text_path')}`\n"
+                "   b) Mirar la miniatura de CADA lámina (composición; es "
+                "pequeña, el texto fino está en el archivo de texto) y abrir "
+                "CADA imagen en resolución completa (las capturas suelen ser "
+                "la evidencia de la PoC):\n" + "\n".join(rows) + loose + "\n"
+                f"   Cita «lámina N» en las justificaciones. No castigues el "
+                "formato .key ni la baja resolución de las miniaturas."
+                + suffix)
         elif k == "error":
             lines.append(
                 f"{n}. [NO LEGIBLE] «{label}» — {it.get('note', '')}\n"
@@ -308,9 +337,24 @@ def main():
 
         block, labels = describe(items, use_images)
         was_no_deck = e["status"] == "no_deck"
+        has_keynote = any(it["kind"] == "keynote" for it in items)
         # the {{no_deck_note}} text the bundle template requires — produced
         # HERE so every orchestrator gets identical fairness framing
-        if was_no_deck:
+        if was_no_deck and has_keynote:
+            # a .key IS a slide deck: telling the reviewer "no slides were
+            # submitted" would frame a normal deck as a deviation
+            note = ("**Este estudiante entregó su presentación en Keynote "
+                    "(.key, de Apple)**, reconstruida lámina por lámina "
+                    "(texto, miniatura e imágenes de cada lámina) porque el "
+                    "formato no se puede abrir en esta máquina. Es una "
+                    "presentación de diapositivas: evalúala como tal, con la "
+                    "MISMA rúbrica. El formato NO es motivo de castigo ni de "
+                    "descalificación; en 'comunicación' juzga la narrativa y "
+                    "la estructura de las láminas, no la nitidez de las "
+                    "miniaturas."
+                    + (" Entregó además material complementario: revisa TODO "
+                       "antes de calificar." if len(labels) > 1 else ""))
+        elif was_no_deck:
             note = ("**IMPORTANTE — este estudiante NO entregó una "
                     "presentación de diapositivas.** Entregó el/los "
                     "material(es) listados abajo. Evalúalo con la MISMA "
@@ -346,6 +390,7 @@ def main():
                 (it.get("pages") if isinstance(it.get("pages"), int) else 0)
                 if it["kind"] == "pdf"
                 else len(it.get("frames") or []) if it["kind"] == "video"
+                else len(it.get("slides") or []) if it["kind"] == "keynote"
                 else 1 if it["kind"] in ("image", "text")
                 # audio counts ONLY once transcribed: nobody can be asked to
                 # cite a line from a file no reviewer could hear
