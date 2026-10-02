@@ -1,6 +1,6 @@
 ---
 name: vigilancia-tech-review
-description: Use when the teaching team needs to review, score, and rank MBA "Vigilancia Tecnológica" student presentations — from a link-shared Google Drive folder OR a local/Drive-Desktop folder of Canvas submissions. Reads EVERY submitted file whatever its format (pptx, pdf, docx, html, png, mp4, xlsx, zip) with one fresh-context AI reviewer per student, web-verifies each tool's launch date, disqualifies tools older than 4 months, scores PoC/Impacto/Comunicación (1.0–5.0, weighted 50/25/25), and produces a three-sheet Excel ranking with the top-5 candidates for human TA review. Harness-agnostic — adapters for Claude Code, Codex (GPT), and Antigravity (Gemini) in references/. Triggers: "revisar presentaciones vigilancia tecnológica", "calificar las ppt de los estudiantes", "ranking vigilancia tecnológica", "escoger las mejores presentaciones".
+description: Use when the teaching team needs to review, score, and rank MBA "Vigilancia Tecnológica" student presentations — from a link-shared Google Drive folder OR a local/Drive-Desktop folder of Canvas submissions. Reads EVERY submitted file whatever its format (pptx, pdf, docx, html, png, mp4, xlsx, zip) with one fresh-context AI reviewer per student, web-verifies each tool's launch date, penalizes tools older than 4 months (configurable: penalty or exclusion), scores PoC/Impacto/Comunicación (1.0–5.0, weighted 50/25/25), and produces a three-sheet Excel ranking with the top-5 candidates for human TA review. Harness-agnostic — adapters for Claude Code, Codex (GPT), and Antigravity (Gemini) in references/. Triggers: "revisar presentaciones vigilancia tecnológica", "calificar las ppt de los estudiantes", "ranking vigilancia tecnológica", "escoger las mejores presentaciones".
 ---
 
 # vigilancia-tech-review
@@ -11,16 +11,22 @@ the official grade — it produces evidence-cited candidate scores and a top-5 s
 
 **Rubric:** Prueba de concepto 50% · Análisis de impacto 25% · Comunicación 25%.
 Exclusion filter: tool launched **more than 4 months** before the **anchor date**
-(`fecha ancla`) → DESCALIFICADA (verified by web search, not by trusting the deck).
+(`fecha ancla`) breaks the rule (verified by web search, not by trusting the deck) —
+penalized by default, see the grade policy below.
 The anchor is the FIRST round in which the student presented that same tool —
 carrying a tool forward is valid, each submission updates the same case (teaching
 team, 2026-10-01) — or, for a tool new in this submission, the student's own
 submission date. **Never the run date**: grading days after the deadline must not
-disqualify anyone for the calendar. **DQ grade policy** (TA-team
-calibration, 2026-08-21): a disqualified row keeps its rubric grade visible (`Nota
-rúbrica`) and its `Nota final` is **capped at 3.0** by default — `--dq-policy=cap:3.0`
-in step 6; `fixed:N`, `rubric` (no penalty) and `legacy` (automatic 1.0) are available
-when the teaching team decides otherwise. General-purpose tools (ChatGPT,
+disqualify anyone for the calendar. **Grade policy for a broken rule** (operator,
+2026-10-01, final round: "should just penalize the grade a bit instead of
+disqualifying"): by default a row that breaks the window or general-tool rule is
+**penalized, not excluded** — `--dq-policy=penalty:0.5:3.0` in step 6: `Nota final`
+= `Nota rúbrica` − 0.5, and a rubric ≥ 3.0 never ends below 3.0 (the rule alone never
+turns a pass into a fail). The row ranks with everyone and can be top-5; the
+reviewer's `disqualified` field still records that the rule was broken, and the
+Excel labels it `¿Penalizada?`. Exclusion policies remain available when the
+teaching team decides otherwise: `cap:N` (the 2026-08-21 TA calibration, cap at
+3.0), `fixed:N`, `rubric` (flag only) and `legacy` (automatic 1.0). General-purpose tools (ChatGPT,
 Gemini, Copilot, Claude…) are invalid unless the subject is a specific recently launched
 feature. Scale: 1.0–5.0.
 
@@ -342,7 +348,7 @@ row (`fecha_ancla`, `ancla_motivo`, `fecha_entrega`, `edad_a_entrega`,
 "misma_herramienta", "ronda_misma_herramienta", "notes"}]}`) and re-run
 `assemble_results.py` — verdicts become loud flags
 (`VERIFICAR FECHA` + `DISCREPANCIA FECHA` + `REVISAR MANUALMENTE` with the
-evidence URL; `mas_nueva` adds "la DESCALIFICACIÓN puede ser INCORRECTA", and so
+evidence URL; `mas_nueva` adds "la SANCIÓN por fecha … puede ser INCORRECTA", and so
 does a same-tool finding on a DQ row); the pipeline never silently re-grades
 or un-disqualifies. A top-5 that survives this pass has earned it.
 
@@ -350,7 +356,7 @@ or un-disqualifies. A top-5 that survives this pass has earned it.
 
 ```bash
 cd "$WORK" && python "$SKILL_DIR/scripts/make_excel.py" results.json res.xlsx \
-  --listing=listing.json --listing=sub-listings/<id>.json ... --dq-policy=cap:3.0
+  --listing=listing.json --listing=sub-listings/<id>.json ... --dq-policy=penalty:0.5:3.0
 ```
 
 Pass EVERY listing JSON (main + each subfolder), with relative paths — 70+ absolute
@@ -358,7 +364,7 @@ Pass EVERY listing JSON (main + each subfolder), with relative paths — 70+ abs
 (`res.xlsx`), then copy to the final `Resultados-Vigilancia-Tecnologica-<RUN_DATE>.xlsx`
 at delivery (a long name inside a deep `$WORK` hits MAX_PATH). The script computes the
 final grade (single source of truth: 0.50/0.25/0.25 = `Nota rúbrica`; DQ rows get
-`Nota final` per `--dq-policy`, default cap at 3.0) and fails (exit 2)
+`Nota final` per `--dq-policy`, default −0.5 protected at 3.0) and fails (exit 2)
 naming any listed entry with no row. Fix the missing rows; never work around the gate.
 Sheets: **Ranking**, **Detalle**, **Meta**. Ranking carries `Fecha ancla` (date ·
 reason) before the age, and `Retroalimentación` (the 2+2, paste-ready) right after
@@ -403,7 +409,7 @@ the Drive-synced delivery folder the user confirmed.
 
 ### 8. Report
 
-Summarize for the teaching team **in Spanish**: revisados / descalificados / no
+Summarize for the teaching team **in Spanish**: revisados / penalizados (o descalificados, según la política) / no
 revisados (con motivos), el top-5 con herramientas y notas finales, cada flag de
 revisión humana, y la ubicación del Excel. Remind them:
 **la nota oficial requiere revisión humana** — esto es una preselección, no un
@@ -411,7 +417,7 @@ veredicto.
 
 ## Hard rules
 
-- Every submitted file appears in the Excel — graded, DQ'd, or NO REVISADO with a real
+- Every submitted file appears in the Excel — graded (penalized or not), or NO REVISADO with a real
   reason. Nothing silently skipped.
 - Format is never a reason to skip or disqualify a student (fairness rule above).
 - Launch dates are verified by web search; the deck's claim alone is never trusted.

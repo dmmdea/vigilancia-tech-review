@@ -69,10 +69,12 @@ flowchart LR
   mal. Distingue una ausencia confirmada de una que solo cruza rondas con
   identificadores distintos, y nunca declara "entrega repetida" por el nombre
   del archivo.
-- **Política de nota para descalificadas configurable** (`make_excel.py --dq-policy`):
-  por defecto `cap:3.0` conserva visible la nota de rúbrica (`Nota rúbrica`) y limita la
-  final a 3.0 — calibración del equipo docente tras la primera ronda; `fixed:N`,
-  `rubric` y `legacy` (1.0 automático) disponibles. Las filas DQ reciben además una
+- **Política de nota cuando se incumple la regla, configurable** (`make_excel.py
+  --dq-policy`): por defecto `penalty:0.5:3.0` penaliza en lugar de descalificar — nota
+  final = nota de rúbrica − 0.5, y una rúbrica ≥ 3.0 nunca queda por debajo de 3.0; la
+  fila sigue compitiendo en el ranking. Siguen disponibles las políticas que excluyen:
+  `cap:N` (calibración del equipo docente tras la primera ronda), `fixed:N`, `rubric` y
+  `legacy` (1.0 automático). Las filas que incumplen reciben además una
   re-verificación adversarial de fecha bidireccional.
 - **Estados más allá de calificado:** `REVISADO (ANEXO)` (archivo leído dentro
   de la revisión integral del estudiante), `REEMPLAZADA` (versión anterior o

@@ -69,10 +69,12 @@ flowchart LR
   It separates a *confirmed* absence from one that merely crosses rounds with
   different identifiers, and never calls a resubmission "repeated" on filename
   alone.
-- **DQ grade policy is configurable** (`make_excel.py --dq-policy`): default `cap:3.0`
-  keeps a disqualified student's rubric grade visible (`Nota rúbrica`) and caps the
-  final at 3.0 — the TA team's calibration after round 1; `fixed:N`, `rubric`, `legacy`
-  (automatic 1.0) available. DQ rows also get a bidirectional adversarial date re-check.
+- **Grade policy for a broken rule is configurable** (`make_excel.py --dq-policy`):
+  default `penalty:0.5:3.0` penalizes instead of disqualifying — final = rubric − 0.5,
+  and a rubric ≥ 3.0 never ends below 3.0; the row still ranks. Exclusion policies
+  `cap:N` (the round-1 TA calibration), `fixed:N`, `rubric` and `legacy` (automatic 1.0)
+  remain available. Rows that break the rule also get a bidirectional adversarial
+  date re-check.
 - **Row states beyond graded:** `REVISADO (ANEXO)` (file read inside the
   student's integral review), `REEMPLAZADA` (older version/duplicate) — plus
   advisory columns `Indicio IA (1-5)` (unfiltered-AI signal, never part of the

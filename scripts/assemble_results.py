@@ -564,9 +564,9 @@ def main():
             if (row.get("disqualified") and recomputed <= 4.0
                     and "general" not in str(row.get("dq_reason") or "").lower()):
                 add_flags(row, "VERIFICAR FECHA", "REVISAR MANUALMENTE")
-                add_note(row, f"Descalificada, pero desde la fecha ancla {fa} "
+                add_note(row, f"Sancionada por la regla de fecha, pero desde la fecha ancla {fa} "
                               f"la herramienta tiene {recomputed:.1f} meses "
-                              "(≤ 4.0): la DESCALIFICACIÓN puede ser "
+                              "(≤ 4.0): la SANCIÓN por fecha (descalificación o penalización) puede ser "
                               "INCORRECTA; decisión humana requerida.")
         # "the FIRST round": an earlier round already shows the same tool
         tool_now = row.get("tool") if fa == h.get("fecha_entrega") else None
@@ -586,7 +586,7 @@ def main():
                           "desde esa primera ronda"
                           + (f", donde tendría {edad_first} meses"
                              if edad_first is not None else "")
-                          + (". La DESCALIFICACIÓN puede ser INCORRECTA"
+                          + (". La SANCIÓN por fecha (descalificación o penalización) puede ser INCORRECTA"
                              if row.get("disqualified") and edad_first is not None
                              and edad_first <= 4.0 else "") + ".")
         rr = rr0
@@ -730,9 +730,9 @@ def main():
                          f"hay evidencia de que la función usada es MÁS NUEVA — "
                          f"{c.get('newer_capability', '')} lanzada "
                          f"{c.get('newer_date', '?')}, fuente "
-                         f"{c.get('newer_evidence_url', '')}. La DESCALIFICACIÓN "
+                         f"{c.get('newer_evidence_url', '')}. La SANCIÓN por fecha (descalificación o penalización) "
                          "puede ser INCORRECTA; decisión humana requerida (el "
-                         "ensamblador nunca des-descalifica).")
+                         "ensamblador nunca quita la sanción por sí solo).")
                 key = "evidence_notes" if row["status"] == "revisado" else "status_reason"
                 row[key] = ((row.get(key) or "") + " | " + extra).strip(" |")
             elif v == "no_concluyente":
@@ -787,7 +787,7 @@ def main():
                          f"MISMA herramienta desde {rs} ({rr['fecha']})"
                          + (f", donde tendría {edad_r} meses"
                             if edad_r is not None else "")
-                         + (". La DESCALIFICACIÓN puede ser INCORRECTA (llevar "
+                         + (". La SANCIÓN por fecha (descalificación o penalización) puede ser INCORRECTA (llevar "
                             "la misma herramienta es válido)"
                             if row.get("disqualified") else "")
                          + "; decisión humana requerida. " + c_notes)
