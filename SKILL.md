@@ -1,6 +1,6 @@
 ---
 name: vigilancia-tech-review
-description: Use when the teaching team needs to review, score, and rank MBA "Vigilancia Tecnológica" student presentations — from a link-shared Google Drive folder OR a local/Drive-Desktop folder of Canvas submissions. Reads EVERY submitted file whatever its format (pptx, pdf, docx, html, png, mp4, xlsx, zip) with one fresh-context AI reviewer per student, web-verifies each tool's launch date, disqualifies tools older than 4 months, scores PoC/Impacto/Comunicación (1.0–5.0, weighted 50/25/25), and produces a three-sheet Excel ranking with the top-5 candidates for human TA review. Harness-agnostic — adapters for Claude Code, Codex (GPT), and Antigravity (Gemini) in references/. Triggers: "revisar presentaciones vigilancia tecnológica", "calificar las ppt de los estudiantes", "ranking vigilancia tecnológica", "escoger las mejores presentaciones".
+description: Use when the teaching team needs to review, score, and rank MBA "Vigilancia Tecnológica" student presentations — from a link-shared Google Drive folder OR a local/Drive-Desktop folder of Canvas submissions. Reads EVERY submitted file whatever its format (pptx, pdf, docx, html, png, mp4, xlsx, zip) with one fresh-context AI reviewer per student, web-verifies each tool's launch date, penalizes tools older than 4 months (configurable: penalty or exclusion), scores PoC/Impacto/Comunicación (1.0–5.0, weighted 50/25/25), and produces a three-sheet Excel ranking with the top-5 candidates for human TA review. Harness-agnostic — adapters for Claude Code, Codex (GPT), and Antigravity (Gemini) in references/. Triggers: "revisar presentaciones vigilancia tecnológica", "calificar las ppt de los estudiantes", "ranking vigilancia tecnológica", "escoger las mejores presentaciones".
 ---
 
 # vigilancia-tech-review
@@ -11,7 +11,8 @@ the official grade — it produces evidence-cited candidate scores and a top-5 s
 
 **Rubric:** Prueba de concepto 50% · Análisis de impacto 25% · Comunicación 25%.
 Exclusion filter: tool launched **more than 4 months** before the **anchor date**
-(`fecha ancla`) → DESCALIFICADA (verified by web search, not by trusting the deck).
+(`fecha ancla`) breaks the rule (verified by web search, not by trusting the deck) —
+penalized by default, see the grade policy below.
 The anchor is the FIRST round in which the student presented that same tool —
 carrying a tool forward is valid, each submission updates the same case (teaching
 team, 2026-10-01) — or, for a tool new in this submission, the student's own
@@ -347,7 +348,7 @@ row (`fecha_ancla`, `ancla_motivo`, `fecha_entrega`, `edad_a_entrega`,
 "misma_herramienta", "ronda_misma_herramienta", "notes"}]}`) and re-run
 `assemble_results.py` — verdicts become loud flags
 (`VERIFICAR FECHA` + `DISCREPANCIA FECHA` + `REVISAR MANUALMENTE` with the
-evidence URL; `mas_nueva` adds "la DESCALIFICACIÓN puede ser INCORRECTA", and so
+evidence URL; `mas_nueva` adds "la SANCIÓN por fecha … puede ser INCORRECTA", and so
 does a same-tool finding on a DQ row); the pipeline never silently re-grades
 or un-disqualifies. A top-5 that survives this pass has earned it.
 
@@ -408,7 +409,7 @@ the Drive-synced delivery folder the user confirmed.
 
 ### 8. Report
 
-Summarize for the teaching team **in Spanish**: revisados / descalificados / no
+Summarize for the teaching team **in Spanish**: revisados / penalizados (o descalificados, según la política) / no
 revisados (con motivos), el top-5 con herramientas y notas finales, cada flag de
 revisión humana, y la ubicación del Excel. Remind them:
 **la nota oficial requiere revisión humana** — esto es una preselección, no un
@@ -416,7 +417,7 @@ veredicto.
 
 ## Hard rules
 
-- Every submitted file appears in the Excel — graded, DQ'd, or NO REVISADO with a real
+- Every submitted file appears in the Excel — graded (penalized or not), or NO REVISADO with a real
   reason. Nothing silently skipped.
 - Format is never a reason to skip or disqualify a student (fairness rule above).
 - Launch dates are verified by web search; the deck's claim alone is never trusted.

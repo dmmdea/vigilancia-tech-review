@@ -564,7 +564,7 @@ def main():
             if (row.get("disqualified") and recomputed <= 4.0
                     and "general" not in str(row.get("dq_reason") or "").lower()):
                 add_flags(row, "VERIFICAR FECHA", "REVISAR MANUALMENTE")
-                add_note(row, f"Descalificada, pero desde la fecha ancla {fa} "
+                add_note(row, f"Sancionada por la regla de fecha, pero desde la fecha ancla {fa} "
                               f"la herramienta tiene {recomputed:.1f} meses "
                               "(≤ 4.0): la SANCIÓN por fecha (descalificación o penalización) puede ser "
                               "INCORRECTA; decisión humana requerida.")
@@ -732,7 +732,7 @@ def main():
                          f"{c.get('newer_date', '?')}, fuente "
                          f"{c.get('newer_evidence_url', '')}. La SANCIÓN por fecha (descalificación o penalización) "
                          "puede ser INCORRECTA; decisión humana requerida (el "
-                         "ensamblador nunca des-descalifica).")
+                         "ensamblador nunca quita la sanción por sí solo).")
                 key = "evidence_notes" if row["status"] == "revisado" else "status_reason"
                 row[key] = ((row.get(key) or "") + " | " + extra).strip(" |")
             elif v == "no_concluyente":

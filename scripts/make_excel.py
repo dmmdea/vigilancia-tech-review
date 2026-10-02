@@ -2,11 +2,15 @@
 """Build the three-sheet results Excel (Ranking, Detalle, Meta) from the orchestrator's results JSON.
 
 Usage:
-    python make_excel.py <results.json> <output.xlsx> [--listing=<listing.json>]... [--dq-policy=cap:3.0]
+    python make_excel.py <results.json> <output.xlsx> [--listing=<listing.json>]... [--dq-policy=penalty:0.5:3.0]
 
 The final grade is computed HERE (single source of truth):
-    final = 0.50*poc + 0.25*impacto + 0.25*comunicacion   (rounded to 0.01)
-    disqualified -> Nota final per --dq-policy (Nota rúbrica always shown):
+    rubric = 0.50*poc + 0.25*impacto + 0.25*comunicacion, rounded HALF-UP to
+    0.01 in exact decimal arithmetic — what a TA gets recomputing it with
+    Excel's ROUND (binary-float round() sent an exact 2.995 to 2.99, which the
+    3.0 floor below then failed to protect)
+    a row that broke the date/general-tool rule (`disqualified` in the
+    review) -> Nota final per --dq-policy (Nota rúbrica always shown):
         penalty:X[:F]  (DEFAULT, penalty:0.5:3.0) the row is NOT excluded: final
                  = rúbrica − X (floor 1.0); with F, a rúbrica >= F never ends
                  below F — breaking the date rule alone never turns a pass into
@@ -25,8 +29,9 @@ A reviewed row with missing/invalid/out-of-range scores is DOWNGRADED to
 and never aborts the workbook (fairness: every submission stays visible).
 
 Row identity is the Drive file id (`id` field) when present, so duplicate
-filenames cannot corrupt the top-5. Ranking order: reviewed & not DQ (by final
-desc) -> DQ -> not reviewed. Top 5 non-DQ rows are starred and highlighted.
+filenames cannot corrupt the top-5. Ranking order: reviewed rows (by final
+desc; under an excluding policy, rule-breaking rows after the rest) -> not
+reviewed. The top 5 ranked rows are starred and highlighted.
 
 --listing (repeatable): the drive_list.py JSON(s) for the folder and any
 subfolders. When given, EVERY listed entry needs a results row (reviewed or
@@ -39,6 +44,7 @@ completeness violation.
 """
 import json
 import sys
+from decimal import ROUND_HALF_UP, Decimal
 
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
@@ -61,7 +67,13 @@ ANEXO_FILL = PatternFill("solid", fgColor="D1FAE5")    # leído en la revisión
 REEMP_FILL = PatternFill("solid", fgColor="EDE9FE")    # versión reemplazada
 THIN = Border(*[Side(style="thin", color="D1D5DB")] * 4)
 
-DQ_POLICY = ("penalty", (0.5, 3.0))   # overridden by --dq-policy; see docstring
+DEFAULT_DQ_POLICY = ("penalty", (0.5, 3.0))
+DQ_POLICY = DEFAULT_DQ_POLICY   # overridden by --dq-policy; see docstring
+
+
+def q2(x) -> float:
+    """Round half-up to 0.01 in exact decimal arithmetic (Excel's ROUND)."""
+    return float(Decimal(str(x)).quantize(Decimal("0.01"), ROUND_HALF_UP))
 
 
 def parse_dq_policy(text: str):
@@ -106,12 +118,12 @@ def apply_dq_policy(rubric: float) -> float:
     mode, v = DQ_POLICY
     if mode == "penalty":
         x, floor = v
-        final = max(1.0, rubric - x)
+        final = max(Decimal("1.0"), Decimal(str(rubric)) - Decimal(str(x)))
         if floor is not None and rubric >= floor:
-            final = max(final, floor)   # the rule alone never fails a pass
-        return round(final, 2)
+            final = max(final, Decimal(str(floor)))   # never fails a pass
+        return q2(final)
     if mode == "cap":
-        return round(min(rubric, v), 2)
+        return q2(min(rubric, v))
     if mode == "fixed":
         return v
     if mode == "legacy":
@@ -123,9 +135,9 @@ def dq_policy_text() -> str:
     mode, v = DQ_POLICY
     if mode == "penalty":
         x, floor = v
-        return (f"no se descalifica: nota final = nota rúbrica − {x:g}"
-                + (f"; si la nota rúbrica es ≥ {floor:g}, la penalización nunca "
-                   f"la deja por debajo de {floor:g}" if floor is not None else "")
+        return (f"no se descalifica: nota final = nota rúbrica − {x:.1f}"
+                + (f"; si la nota rúbrica es ≥ {floor:.1f}, la penalización nunca "
+                   f"la deja por debajo de {floor:.1f}" if floor is not None else "")
                 + "; la fila compite en el ranking como las demás")
     return {"cap": f"nota final = mín(nota rúbrica, {v}) — conserva la nota de "
                    "la rúbrica y la limita",
@@ -244,7 +256,9 @@ def normalize(r: dict) -> None:
         r["flags"].append("REVISAR MANUALMENTE")
         r["_final"] = None
         return
-    rubric = round(0.50 * poc + 0.25 * imp + 0.25 * com, 2)
+    # exact decimal, half-up: the TA's Excel ROUND gives the same number
+    rubric = q2(Decimal("0.50") * Decimal(str(poc)) + Decimal("0.25") * Decimal(str(imp))
+                + Decimal("0.25") * Decimal(str(com)))
     r["_rubric"] = rubric
     r["_final"] = apply_dq_policy(rubric) if dq else rubric
 
@@ -317,6 +331,7 @@ def main() -> None:
     listings = [a.split("=", 1)[1] for a in sys.argv[1:]
                 if a.startswith("--listing=")]
     global DQ_POLICY
+    DQ_POLICY = DEFAULT_DQ_POLICY   # a run without the flag must get the default
     for a in sys.argv[1:]:
         if a.startswith("--dq-policy="):
             try:
@@ -465,10 +480,12 @@ def main() -> None:
                                                 "estudiante presentó la misma herramienta (llevarla de una "
                                                 "ronda a otra es válido); si la herramienta es nueva, su fecha "
                                                 "de entrega; nunca la fecha de corrida. "
-                                                f"Política de nota para DQ: {dq_policy_text()}; "
+                                                f"Política de nota: {dq_policy_text()}; "
                                                 "zona 3.5–4.5 meses lleva flag VERIFICAR FECHA")
-    meta["A4"], meta["B4"] = "Ponderación", ("PoC 50% · Impacto 25% · Comunicación 25% = Nota rúbrica; "
-                                             "Nota final = Nota rúbrica salvo DQ (ver Regla de corte)")
+    meta["A4"], meta["B4"] = "Ponderación", ("PoC 50% · Impacto 25% · Comunicación 25% = Nota rúbrica "
+                                             "(redondeo a 0.01 hacia arriba en el medio, como ROUND de "
+                                             "Excel); Nota final = Nota rúbrica salvo incumplimiento de la "
+                                             "regla de fecha (ver Regla de corte)")
     meta["A6"], meta["B6"] = "Indicio IA (1-5)", ("señal ADVISORY de uso de IA sin filtro sobre el material "
                                                   "entregado (1=curado a mano, 5=volcado sin filtrar); NUNCA "
                                                   "es componente de la nota")
