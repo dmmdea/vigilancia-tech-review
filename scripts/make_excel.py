@@ -7,13 +7,19 @@ Usage:
 The final grade is computed HERE (single source of truth):
     final = 0.50*poc + 0.25*impacto + 0.25*comunicacion   (rounded to 0.01)
     disqualified -> Nota final per --dq-policy (Nota rúbrica always shown):
-        cap:N    (DEFAULT, cap:3.0) final = min(rúbrica, N) — TA-team feedback
-                 2026-08-21: "flexibiliza... les ponga 3 o algo así y que deje
-                 la nota" — a DQ'd student keeps their rubric grade visible and
-                 cannot exceed N
+        penalty:X[:F]  (DEFAULT, penalty:0.5:3.0) the row is NOT excluded: final
+                 = rúbrica − X (floor 1.0); with F, a rúbrica >= F never ends
+                 below F — breaking the date rule alone never turns a pass into
+                 a fail. Ranked with everyone, top-5 eligible. Operator decision
+                 2026-10-01 (final round): "should just penalize the grade a bit
+                 instead of disqualifying" -> −0.5, protected at 3.0.
+        cap:N    final = min(rúbrica, N) — TA-team feedback 2026-08-21:
+                 "flexibiliza... les ponga 3 o algo así y que deje la nota"
         fixed:N  final = N regardless of the rubric
         rubric   final = rúbrica (no penalty; the DQ stays visible as a flag)
         legacy   final = 1.0 (the original automatic-1.0 rule)
+    Every mode except penalty EXCLUDES the row from the ranking (it sorts
+    after the valid rows and cannot be top-5).
 A reviewed row with missing/invalid/out-of-range scores is DOWNGRADED to
 "no_revisado" with a visible reason — it never renders as a normal graded row
 and never aborts the workbook (fairness: every submission stays visible).
@@ -49,21 +55,36 @@ HEADER_FILL = PatternFill("solid", fgColor="1F2937")
 HEADER_FONT = Font(bold=True, color="FFFFFF")
 TOP5_FILL = PatternFill("solid", fgColor="FDE68A")
 DQ_FILL = PatternFill("solid", fgColor="FECACA")
+PEN_FILL = PatternFill("solid", fgColor="FED7AA")      # penalizada, no excluida
 NOREV_FILL = PatternFill("solid", fgColor="E5E7EB")
 ANEXO_FILL = PatternFill("solid", fgColor="D1FAE5")    # leído en la revisión
 REEMP_FILL = PatternFill("solid", fgColor="EDE9FE")    # versión reemplazada
 THIN = Border(*[Side(style="thin", color="D1D5DB")] * 4)
 
-DQ_POLICY = ("cap", 3.0)   # overridden by --dq-policy; see module docstring
+DQ_POLICY = ("penalty", (0.5, 3.0))   # overridden by --dq-policy; see docstring
 
 
 def parse_dq_policy(text: str):
-    """'cap:3.0' | 'fixed:3.0' | 'rubric' | 'legacy' -> (mode, value)."""
+    """'penalty:0.5[:3.0]' | 'cap:3.0' | 'fixed:3.0' | 'rubric' | 'legacy'
+    -> (mode, value); penalty's value is (deduction, protected_floor|None)."""
     mode, _, val = text.strip().lower().partition(":")
     if mode in ("rubric", "legacy"):
         if val:
             raise ValueError(f"'{mode}' no lleva valor")
         return (mode, 1.0 if mode == "legacy" else None)
+    if mode == "penalty":
+        x, _, f = val.partition(":")
+        try:
+            x = float(x)
+            f = float(f) if f else None
+        except ValueError:
+            raise ValueError("'penalty' requiere un descuento y, opcional, un "
+                             "piso protegido: p. ej. penalty:0.5:3.0")
+        if not 0.0 < x <= 4.0:
+            raise ValueError("el descuento debe estar entre 0 y 4.0")
+        if f is not None and not 1.0 <= f <= 5.0:
+            raise ValueError("el piso protegido debe estar entre 1.0 y 5.0")
+        return (mode, (x, f))
     if mode in ("cap", "fixed"):
         try:
             v = float(val)
@@ -72,11 +93,23 @@ def parse_dq_policy(text: str):
         if not 1.0 <= v <= 5.0:
             raise ValueError("el valor debe estar entre 1.0 y 5.0")
         return (mode, v)
-    raise ValueError("modos válidos: cap:N, fixed:N, rubric, legacy")
+    raise ValueError("modos válidos: penalty:X[:F], cap:N, fixed:N, rubric, legacy")
+
+
+def penalizes() -> bool:
+    """True when breaking the date/general-tool rule costs points but does
+    NOT exclude the row from the ranking."""
+    return DQ_POLICY[0] == "penalty"
 
 
 def apply_dq_policy(rubric: float) -> float:
     mode, v = DQ_POLICY
+    if mode == "penalty":
+        x, floor = v
+        final = max(1.0, rubric - x)
+        if floor is not None and rubric >= floor:
+            final = max(final, floor)   # the rule alone never fails a pass
+        return round(final, 2)
     if mode == "cap":
         return round(min(rubric, v), 2)
     if mode == "fixed":
@@ -88,6 +121,12 @@ def apply_dq_policy(rubric: float) -> float:
 
 def dq_policy_text() -> str:
     mode, v = DQ_POLICY
+    if mode == "penalty":
+        x, floor = v
+        return (f"no se descalifica: nota final = nota rúbrica − {x:g}"
+                + (f"; si la nota rúbrica es ≥ {floor:g}, la penalización nunca "
+                   f"la deja por debajo de {floor:g}" if floor is not None else "")
+                + "; la fila compite en el ranking como las demás")
     return {"cap": f"nota final = mín(nota rúbrica, {v}) — conserva la nota de "
                    "la rúbrica y la limita",
             "fixed": f"nota final = {v} fija",
@@ -210,12 +249,16 @@ def normalize(r: dict) -> None:
     r["_final"] = apply_dq_policy(rubric) if dq else rubric
 
 
+def excluded(r: dict) -> bool:
+    """Out of the ranking: a DQ under every policy except penalty."""
+    return bool(r.get("disqualified")) and not penalizes()
+
+
 def sort_key(r: dict):
     status = r.get("status")
-    dq = bool(r.get("disqualified"))
     final = r.get("_final")
     if status == "revisado":
-        group = 1 if dq else 0
+        group = 1 if excluded(r) else 0
     else:
         group = {"revisado_anexo": 2, "reemplazada": 3}.get(status, 4)
     return (group, -(final if final is not None else 0.0))
@@ -321,7 +364,7 @@ def main() -> None:
 
     rankable = [r for r in results
                 if r.get("status") == "revisado"
-                and not r.get("disqualified") and r["_final"] is not None]
+                and not excluded(r) and r["_final"] is not None]
     top5_uids = {r["_uid"] for r in rankable[:5]}
     rankable_uids = {r["_uid"] for r in rankable}
     # Flag a tie only when it actually straddles the top-5 cut (position 5 vs 6);
@@ -335,7 +378,12 @@ def main() -> None:
     wb = Workbook()
     ws = wb.active
     ws.title = "Ranking"
-    style_header(ws, RANK_COLS)
+    # under penalty the DQ columns describe a deduction, not an exclusion —
+    # a TA reading "¿Descalificado? SÍ" next to a 4.1 would be misled
+    cols = [(("¿Penalizada?" if n == "¿Descalificado?" else
+              "Razón penalización" if n == "Razón DQ" else n), w)
+            for n, w in RANK_COLS] if penalizes() else RANK_COLS
+    style_header(ws, cols)
 
     pos = 0
     for i, r in enumerate(results, start=2):
@@ -374,7 +422,7 @@ def main() -> None:
             r.get("status_reason", ""),
         ]
         fill = (TOP5_FILL if in_top5
-                else DQ_FILL if (reviewed and dq)
+                else (PEN_FILL if penalizes() else DQ_FILL) if (reviewed and dq)
                 else ANEXO_FILL if status == "revisado_anexo"
                 else REEMP_FILL if status == "reemplazada"
                 else NOREV_FILL if not reviewed else None)
@@ -410,8 +458,10 @@ def main() -> None:
     meta = wb.create_sheet("Meta")
     meta["A1"], meta["B1"] = "Fecha de corrida", data.get("run_date", "")
     meta["A2"], meta["B2"] = "Carpeta Drive", data.get("folder_url", "")
-    meta["A3"], meta["B3"] = "Regla de corte", ("> 4 meses entre el lanzamiento verificado y la fecha ancla → "
-                                                "DESCALIFICADA. Fecha ancla = la PRIMERA ronda en que el "
+    meta["A3"], meta["B3"] = "Regla de corte", ("> 4 meses entre el lanzamiento verificado y la fecha ancla, o "
+                                                "herramienta general sin función específica reciente → "
+                                                + ("PENALIZADA" if penalizes() else "DESCALIFICADA")
+                                                + ". Fecha ancla = la PRIMERA ronda en que el "
                                                 "estudiante presentó la misma herramienta (llevarla de una "
                                                 "ronda a otra es válido); si la herramienta es nueva, su fecha "
                                                 "de entrega; nunca la fecha de corrida. "

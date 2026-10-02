@@ -16,11 +16,16 @@ The anchor is the FIRST round in which the student presented that same tool —
 carrying a tool forward is valid, each submission updates the same case (teaching
 team, 2026-10-01) — or, for a tool new in this submission, the student's own
 submission date. **Never the run date**: grading days after the deadline must not
-disqualify anyone for the calendar. **DQ grade policy** (TA-team
-calibration, 2026-08-21): a disqualified row keeps its rubric grade visible (`Nota
-rúbrica`) and its `Nota final` is **capped at 3.0** by default — `--dq-policy=cap:3.0`
-in step 6; `fixed:N`, `rubric` (no penalty) and `legacy` (automatic 1.0) are available
-when the teaching team decides otherwise. General-purpose tools (ChatGPT,
+disqualify anyone for the calendar. **Grade policy for a broken rule** (operator,
+2026-10-01, final round: "should just penalize the grade a bit instead of
+disqualifying"): by default a row that breaks the window or general-tool rule is
+**penalized, not excluded** — `--dq-policy=penalty:0.5:3.0` in step 6: `Nota final`
+= `Nota rúbrica` − 0.5, and a rubric ≥ 3.0 never ends below 3.0 (the rule alone never
+turns a pass into a fail). The row ranks with everyone and can be top-5; the
+reviewer's `disqualified` field still records that the rule was broken, and the
+Excel labels it `¿Penalizada?`. Exclusion policies remain available when the
+teaching team decides otherwise: `cap:N` (the 2026-08-21 TA calibration, cap at
+3.0), `fixed:N`, `rubric` (flag only) and `legacy` (automatic 1.0). General-purpose tools (ChatGPT,
 Gemini, Copilot, Claude…) are invalid unless the subject is a specific recently launched
 feature. Scale: 1.0–5.0.
 
@@ -350,7 +355,7 @@ or un-disqualifies. A top-5 that survives this pass has earned it.
 
 ```bash
 cd "$WORK" && python "$SKILL_DIR/scripts/make_excel.py" results.json res.xlsx \
-  --listing=listing.json --listing=sub-listings/<id>.json ... --dq-policy=cap:3.0
+  --listing=listing.json --listing=sub-listings/<id>.json ... --dq-policy=penalty:0.5:3.0
 ```
 
 Pass EVERY listing JSON (main + each subfolder), with relative paths — 70+ absolute
@@ -358,7 +363,7 @@ Pass EVERY listing JSON (main + each subfolder), with relative paths — 70+ abs
 (`res.xlsx`), then copy to the final `Resultados-Vigilancia-Tecnologica-<RUN_DATE>.xlsx`
 at delivery (a long name inside a deep `$WORK` hits MAX_PATH). The script computes the
 final grade (single source of truth: 0.50/0.25/0.25 = `Nota rúbrica`; DQ rows get
-`Nota final` per `--dq-policy`, default cap at 3.0) and fails (exit 2)
+`Nota final` per `--dq-policy`, default −0.5 protected at 3.0) and fails (exit 2)
 naming any listed entry with no row. Fix the missing rows; never work around the gate.
 Sheets: **Ranking**, **Detalle**, **Meta**. Ranking carries `Fecha ancla` (date ·
 reason) before the age, and `Retroalimentación` (the 2+2, paste-ready) right after

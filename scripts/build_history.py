@@ -162,7 +162,9 @@ def load_rounds(paths, overrides):
                     "herramienta": str(cell(r, "Herramienta") or "").strip(),
                     "fecha_verificada": iso_date(cell(r, "Fecha lanz. verificada"))
                     or str(cell(r, "Fecha lanz. verificada") or "").strip()[:10],
-                    "descalificado": str(cell(r, "¿Descalificado?") or "")
+                    # the column is "¿Penalizada?" under the penalty policy
+                    "descalificado": str(cell(r, "¿Descalificado?")
+                                         or cell(r, "¿Penalizada?") or "")
                     .strip().upper().startswith("S"),
                 })
             if ronda in seen:

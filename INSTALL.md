@@ -290,9 +290,10 @@ Eso agrega el trío de hojas de la ronda y reconstruye dos hojas transversales:
   confirmada (`SIN ENTREGA`) de una que solo cruza rondas con identificadores
   distintos (`SIN CONFIRMAR`, que **no** es prueba de nada).
 
-La política de nota para descalificadas se elige al generar el Excel:
-`--dq-policy=cap:3.0` (predeterminada) conserva visible la nota de rúbrica y
-limita la final a 3.0.
+La política de nota cuando se incumple la regla de fecha se elige al generar el
+Excel: `--dq-policy=penalty:0.5:3.0` (predeterminada) descuenta 0.5 a la nota de
+rúbrica sin bajar de 3.0 a quien aprueba; `--dq-policy=cap:3.0` vuelve a la regla
+anterior (descalificar y limitar la final a 3.0).
 
 ### 6.1 Rondas viejas sin huella de contenido
 
