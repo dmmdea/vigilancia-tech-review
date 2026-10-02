@@ -37,10 +37,19 @@ gets `ancla_decisiva` — step 5bis re-checks every one of them. The date
 checker's `misma_herramienta` verdict is applied as flags; nothing here ever
 re-grades or un-disqualifies.
 
+UNCHANGED RESUBMISSION (R30): a graded row whose main file (the graded deck or
+its source) has the same Huella as a round in historial.json (Clave-matched
+rounds only), or is listed in the optional <work>/sin_cambios.json with its
+evidence, gets nota_piso = the best valid grade of those rounds and flag
+ENTREGA SIN CAMBIOS; make_excel.py applies the floor. A main file left NO
+REVISADO gets the same facts in its status_reason for the human grader.
+Reviewer-supplied nota_piso/piso_rondas are discarded.
+
 Usage:
     python assemble_results.py <workdir> <run-date> [--folder-desc="..."]
 """
 import json
+import math
 import os
 import re
 import unicodedata
@@ -65,6 +74,48 @@ def load(work, name, required=True):
         return None
     with open(p, encoding="utf-8") as f:
         return json.load(f)
+
+
+def load_sin_cambios(work):
+    """<work>/sin_cambios.json -> {folder_id: {"rondas": [..], "evidencia": ".."}}.
+    Strict: a malformed file stops the run naming the file (an override that
+    raises grades must never half-apply); a bad entry is skipped LOUDLY;
+    duplicate folder_ids are merged (rounds united, evidence joined)."""
+    p = os.path.join(work, "sin_cambios.json")
+    if not os.path.exists(p):
+        return {}
+    try:
+        with open(p, encoding="utf-8-sig") as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError) as e:
+        print(f"ERROR: {p} ilegible: {e}", file=sys.stderr)
+        sys.exit(2)
+    entries = data.get("entradas") if isinstance(data, dict) else None
+    if not isinstance(entries, list):
+        print(f"ERROR: {p} debe ser {{\"entradas\": [...]}}", file=sys.stderr)
+        sys.exit(2)
+    out = {}
+    for m in entries:
+        fid = m.get("folder_id") if isinstance(m, dict) else None
+        rondas = m.get("rondas") if isinstance(m, dict) else None
+        ev = str(m.get("evidencia") or "").strip() if isinstance(m, dict) else ""
+        if isinstance(rondas, str):
+            rondas = [rondas]           # one round, matched EXACTLY
+        if (not isinstance(fid, str) or not fid or not isinstance(rondas, list)
+                or not rondas or not all(isinstance(x, str) and x.strip() for x in rondas)
+                or not ev):
+            print(f"AVISO: {os.path.basename(p)}: entrada inválida {m!r} — se ignora "
+                  "(requiere folder_id, rondas [lista de nombres de ronda] y evidencia).",
+                  file=sys.stderr)
+            continue
+        rondas = [x.strip() for x in rondas]
+        if fid in out:
+            prev = out[fid]
+            prev["rondas"] = prev["rondas"] + [x for x in rondas if x not in prev["rondas"]]
+            prev["evidencia"] = f"{prev['evidencia']} | {ev}"
+        else:
+            out[fid] = {"rondas": rondas, "evidencia": ev}
+    return out
 
 
 def month_index(datestr):
@@ -161,6 +212,10 @@ def main():
     def graded(fr, r, extra_flags=None, extra_notes=None, student_name=None,
                canvas_key=None):
         row = dict(r)
+        # grade-floor fields are set ONLY by the R30 pass below from the
+        # delivered history — a reviewer's JSON must never carry one in
+        for k in ("nota_piso", "piso_rondas"):
+            row.pop(k, None)
         row["id"] = fr["id"]
         row["canvas_key"] = canvas_key
         # content fingerprint of the submitted file: lets a later round tell
@@ -629,44 +684,85 @@ def main():
     #                  "evidencia": "texto idéntico salvo ..."}]}
     # (a re-saved .pptx changes its bytes but not its content). This only
     # records the floor; make_excel.py applies it — single source of truth.
-    manual = (load(work, "sin_cambios.json", required=False) or {}).get("entradas", [])
-    manual_by_fid = {}
-    for m in manual:
-        if not m.get("folder_id") or not m.get("rondas") or not str(m.get("evidencia") or "").strip():
-            print(f"AVISO: entrada de sin_cambios.json incompleta {m!r} — se ignora "
-                  "(requiere folder_id, rondas y evidencia).", file=sys.stderr)
-            continue
-        manual_by_fid[m["folder_id"]] = m
+    manual_by_fid = load_sin_cambios(work)
+    applied_manual = set()
+
+    def valid_grade(v):
+        return (isinstance(v, (int, float)) and not isinstance(v, bool)
+                and math.isfinite(v) and 1.0 <= v <= 5.0)
+
+    # the student's MAIN file, in every form the plan kept: the graded deck
+    # plus its source (a .pptx whose PDF export was graded is the same work)
+    main_huellas = {}
+    for e in plan["folders"]:
+        hs = {fr.get("huella") for fr in ([e["deck"]] if e.get("deck") else [])
+              + list(e.get("deck_source_of") or []) if fr and fr.get("huella")}
+        main_huellas[e["folder_id"]] = hs
+    main_ids = {e["deck"]["id"] for e in plan["folders"] if e.get("deck")}
+
     n_floor = 0
     for row in results:
         fid = fid_of.get(row.get("id"))
         h = hist.get(fid) if hist else None
-        if row["status"] != "revisado" or not h:
+        if not h:
             continue
+        # the graded row, or a main file a human must grade by hand; never an
+        # annex or a superseded version
+        is_main = row["status"] == "revisado" or (
+            row["status"] == "no_revisado" and row.get("id") in main_ids)
+        if not is_main:
+            continue
+        mine = main_huellas.get(fid, set()) | ({row["huella"]} if row.get("huella") else set())
         same = []
         for r in h.get("rondas") or []:
             if r.get("coincidencia") != "clave":
                 continue      # a name-only match cannot vouch for the grade
-            if row.get("huella") and r.get("huella") == row.get("huella"):
-                same.append((r, "huella de contenido idéntica"))
+            if r.get("huella") and r["huella"] in mine:
+                same.append((r, "archivo principal idéntico (huella de contenido)"))
         m = manual_by_fid.get(fid)
         if m:
-            for r in h.get("rondas") or []:
-                if (r.get("ronda") in m["rondas"] and r.get("coincidencia") == "clave"
-                        and not any(r is s for s, _ in same)):
+            for wanted in m["rondas"]:
+                r = next((x for x in h.get("rondas") or [] if x.get("ronda") == wanted), None)
+                if r is None:
+                    print(f"AVISO: sin_cambios.json: la ronda '{wanted}' no está en el "
+                          f"historial de {h.get('student_name')} — entrada no aplicada.",
+                          file=sys.stderr)
+                elif r.get("coincidencia") != "clave":
+                    print(f"AVISO: sin_cambios.json: '{wanted}' de {h.get('student_name')} "
+                          "se asoció solo por nombre — no puede fijar una nota mínima.",
+                          file=sys.stderr)
+                elif not any(r is s for s, _ in same):
                     same.append((r, f"contenido sin cambios: {m['evidencia']}"))
-        same = [(r, why) for r, why in same if isinstance(r.get("nota_final"), (int, float))]
+            applied_manual.add(fid)
+        for r, _ in same:
+            if not valid_grade(r.get("nota_final")):
+                print(f"AVISO: {h.get('student_name')}: la entrega coincide con "
+                      f"'{r['ronda']}' pero esa ronda no tiene una nota válida (1.0-5.0) "
+                      "— no fija nota mínima.", file=sys.stderr)
+        same = [(r, why) for r, why in same if valid_grade(r.get("nota_final"))]
         if not same:
             continue
-        best = max(same, key=lambda s: s[0]["nota_final"])
-        row["nota_piso"] = best[0]["nota_final"]
+        best = max(r["nota_final"] for r, _ in same)
+        detail = ", ".join(f"{r['ronda']} ({why}; nota entregada {r['nota_final']:.2f})"
+                           for r, why in same)
+        if row["status"] != "revisado":
+            # no review this run: a human grades it — tell them the floor
+            row["status_reason"] = ((row.get("status_reason") or "") + " | ENTREGA SIN "
+                                    f"CAMBIOS respecto a {detail}: al calificar a mano, la "
+                                    f"nota no debe ser menor que {best:.2f}.").strip(" |")
+            row["nota_piso"] = best
+            row["piso_rondas"] = [f"{r['ronda']} ({r['nota_final']:.2f})" for r, _ in same]
+            add_flags(row, "ENTREGA SIN CAMBIOS")
+            continue
+        row["nota_piso"] = best
         row["piso_rondas"] = [f"{r['ronda']} ({r['nota_final']:.2f})" for r, _ in same]
         add_flags(row, "ENTREGA SIN CAMBIOS")
-        add_note(row, "ENTREGA SIN CAMBIOS respecto a "
-                 + ", ".join(f"{r['ronda']} ({why}; nota entregada {r['nota_final']:.2f})"
-                             for r, why in same)
-                 + f". La nota final no puede ser menor que {best[0]['nota_final']:.2f}.")
+        add_note(row, f"ENTREGA SIN CAMBIOS respecto a {detail}. La nota final no "
+                      f"puede ser menor que {best:.2f}.")
         n_floor += 1
+    for fid in set(manual_by_fid) - applied_manual:
+        print(f"AVISO: sin_cambios.json: folder_id '{fid}' sin fila calificable o sin "
+              "historial — entrada no aplicada.", file=sys.stderr)
     if hist:
         print(f"entrega sin cambios: {n_floor} fila(s) con nota mínima protegida")
 

@@ -296,8 +296,9 @@ also normalizes fields (strict dates, bare student names, ≤70-char tool, contr
 flag vocabulary; everything else moves to `observations`) — content is preserved,
 scores and justifications are never edited. Note the flag vocabulary split:
 reviewers emit the subset in the templates; `ENTREGA SIN PPT`, `ENTREGA
-DUPLICADA`, `SPOT-CHECK FALLIDO` and `EVIDENCIA DE ENVIO ANTERIOR INCLUIDA`
-are assigned by the assembler, and `EMPATE TOP5` / `EDAD SIN CALCULAR` by `make_excel.py`.
+DUPLICADA`, `SPOT-CHECK FALLIDO`, `EVIDENCIA DE ENVIO ANTERIOR INCLUIDA` and
+`ENTREGA SIN CAMBIOS` are assigned by the assembler, and `EMPATE TOP5` /
+`EDAD SIN CALCULAR` / `NOTA PROTEGIDA` by `make_excel.py`.
 
 **Spot-check honesty on BOTH passes** — every ~4th review, deck AND bundle alike
 (the pilot spot-checked only deck reviews; the #1-ranked student came from the
@@ -382,8 +383,11 @@ final grade (single source of truth: 0.50/0.25/0.25 = `Nota rúbrica`; DQ rows g
 `Nota final` per `--dq-policy`, default −0.5 protected at 3.0) and fails (exit 2)
 naming any listed entry with no row. Fix the missing rows; never work around the gate.
 Sheets: **Ranking**, **Detalle**, **Meta**. Ranking carries `Fecha ancla` (date ·
-reason) before the age, and `Retroalimentación` (the 2+2, paste-ready) right after
-`Nota final`.
+reason) before the age, then `Nota final`, `Nota mínima (sin cambios)` (the floor,
+when the file is unchanged from a graded earlier round) and `Retroalimentación` (the
+2+2, paste-ready). Re-running a round whose master already holds that round? Pass
+`--exclude-round="<ronda>"` to `build_history.py`, or a student is floored by their
+own first-run grade.
 
 ### 7. Deliver — multi-round master, history is sacred
 

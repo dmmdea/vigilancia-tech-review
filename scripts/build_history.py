@@ -21,6 +21,10 @@ Usage:
         [--fecha-entrega-defecto=YYYY-MM-DD]     # folders whose Canvas
                                                  # timestamp cannot be read
                                                  # (e.g. a Drive-link run)
+        [--exclude-round="<ronda>"]...           # never read this round as
+                                                 # history (a re-run whose
+                                                 # master holds the CURRENT
+                                                 # round)
 
 No --master at all (a course's first round): every anchor is the student's
 own submission date. A round's date should be its SUBMISSION deadline; the
@@ -50,6 +54,7 @@ Exit: 0 ok · 1 usage · 2 unreadable input / undated round / unreadable
 submission date.
 """
 import json
+import math
 import os
 import re
 import sys
@@ -91,15 +96,16 @@ def norm_key(v):
 
 
 def num(v):
-    """A delivered grade cell -> float, or None (blank / text / bool)."""
+    """A delivered grade cell -> float in [1.0, 5.0], or None. Blank, text,
+    bool, NaN/inf and out-of-scale values are None: one bad cell must never
+    become (or mask) a grade floor."""
     if isinstance(v, bool) or v is None:
         return None
-    if isinstance(v, (int, float)):
-        return float(v)
     try:
-        return float(str(v).strip().replace(",", "."))
+        x = float(v) if isinstance(v, (int, float)) else float(str(v).strip().replace(",", "."))
     except ValueError:
         return None
+    return x if math.isfinite(x) and 1.0 <= x <= 5.0 else None
 
 
 def iso_date(v):
@@ -120,7 +126,7 @@ def submission_date(timestamp):
     return f"{int(m.group(3)):04d}-{MESES[m.group(2).lower()]:02d}-{int(m.group(1)):02d}"
 
 
-def load_rounds(paths, overrides):
+def load_rounds(paths, overrides, excluded=frozenset()):
     """[(ronda, fecha, fuente, rows)] from every 'Ranking - X' sheet."""
     try:
         from openpyxl import load_workbook
@@ -165,10 +171,16 @@ def load_rounds(paths, overrides):
             def cell(r, h):
                 i = col.get(h)
                 return r[i] if i is not None and i < len(r) else None
-            graded = []
+            if ronda in excluded:
+                print(f"ronda '{ronda}' excluida (--exclude-round)")
+                continue
+            graded, bad_grades = [], 0
             for r in rows[1:]:
                 if str(cell(r, "Estado") or "").strip().upper() != "REVISADO":
                     continue
+                raw = cell(r, "Nota final")
+                if raw not in (None, "") and num(raw) is None:
+                    bad_grades += 1
                 graded.append({
                     "clave": norm_key(cell(r, "Clave")),
                     "nombre": norm_name(cell(r, "Estudiante")),
@@ -185,6 +197,15 @@ def load_rounds(paths, overrides):
                     "huella": str(cell(r, "Huella") or "").strip() or None,
                     "nota_final": num(cell(r, "Nota final")),
                 })
+            if bad_grades:
+                print(f"AVISO: {ws.title}: {bad_grades} celda(s) de 'Nota final' "
+                      "fuera de la escala 1.0-5.0 o ilegibles — ignoradas (no "
+                      "pueden servir de nota mínima).", file=sys.stderr)
+            if graded and not any(g["huella"] for g in graded):
+                print(f"AVISO: {ws.title} no trae huellas de contenido: la nota "
+                      "mínima por entrega sin cambios no puede aplicarse a esa "
+                      "ronda salvo por sin_cambios.json (rellénalas con "
+                      "backfill_huella.py).", file=sys.stderr)
             if ronda in seen:
                 if len(graded) != seen[ronda]:
                     print(f"AVISO: la ronda '{ronda}' aparece en más de un "
@@ -243,10 +264,15 @@ def block_for(entry):
 
 def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    masters, overrides, default_date = [], {}, None
+    masters, overrides, default_date, excluded = [], {}, None, set()
     for a in sys.argv[1:]:
         if a.startswith("--master="):
             masters.append(a.split("=", 1)[1])
+        elif a.startswith("--exclude-round="):
+            # a re-run whose master already holds the CURRENT round must not
+            # read it as history (it would floor a student with their own
+            # first-run grade)
+            excluded.add(a.split("=", 1)[1].strip())
         elif a.startswith("--round-date="):
             k, _, v = a.split("=", 1)[1].partition("=")
             if not ISO.match(v.strip()):
@@ -272,7 +298,7 @@ def main():
         print(f"ERROR: review_plan.json ilegible: {e}", file=sys.stderr)
         sys.exit(2)
 
-    rounds = load_rounds(masters, overrides) if masters else []
+    rounds = load_rounds(masters, overrides, excluded) if masters else []
     # A name match is accepted only when it is unambiguous on BOTH sides:
     # one Clave-less row with that name in the round, and one student
     # (one Clave) with that name in this plan. Otherwise it is reported and
@@ -317,7 +343,16 @@ def main():
         for h in by_name.get(norm_name(e.get("student_name")), []):
             if h["ronda"] not in keyed_rounds:
                 hist.append(h)
-        # a round dated AFTER this submission cannot be where it started
+        # a round dated AFTER this submission cannot be where it started —
+        # but say so: with a Meta (grading-date) fallback a real earlier round
+        # can land here and the student would silently lose its anchor and
+        # its grade floor
+        for h in hist:
+            if h["fecha"] > fecha_entrega:
+                print(f"AVISO: {e.get('student_name')}: la ronda '{h['ronda']}' "
+                      f"({h['fecha']}) es posterior a su entrega ({fecha_entrega}) "
+                      "y se omite; si esa fecha es la de corrida y no la de "
+                      "cierre, corrígela con --round-date.", file=sys.stderr)
         hist = sorted((h for h in hist if h["fecha"] <= fecha_entrega),
                       key=lambda h: h["fecha"])
         anclas = sorted({h["fecha"] for h in hist} | {fecha_entrega})

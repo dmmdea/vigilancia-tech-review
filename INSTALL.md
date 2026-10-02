@@ -300,7 +300,8 @@ anterior (descalificar y limitar la final a 3.0).
 La columna `Huella` es la que permite demostrar que un estudiante reenvió el
 mismo archivo en vez de actualizar su caso. Las rondas generadas antes de que
 existiera esa columna no la traen, y la hoja `Seguimiento` tiene que degradar
-a `MISMO NOMBRE (verificar)`. Si los archivos de esa ronda **siguen en
+a `MISMO NOMBRE (verificar)`. Sin `Huella` tampoco se puede aplicar la nota
+mínima de una entrega sin cambios a esa ronda (salvo con `sin_cambios.json`). Si los archivos de esa ronda **siguen en
 disco**, no hay que esperar a la siguiente:
 
 ```bash

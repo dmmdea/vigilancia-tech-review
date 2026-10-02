@@ -54,6 +54,7 @@ Canonical flags (the only ones that stay in `flags`):
   REVISAR MANUALMENTE · SIN EVIDENCIA PROPIA · IMPACTO NO CUANTIFICADO
   HERRAMIENTA GENERAL - FUNCION ESPECIFICA · SPOT-CHECK FALLIDO
   EVIDENCIA NO LEGIBLE · EVIDENCIA DE ENVIO ANTERIOR INCLUIDA
+  ENTREGA SIN CAMBIOS (assembler only)
 
 CLI output: JSON to stdout {"ok": bool, "problems": [...],
 "moved_to_observations": [...]}. Exit 0 = acceptable (possibly after

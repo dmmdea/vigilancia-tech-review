@@ -76,6 +76,11 @@ flowchart LR
   `cap:N` (calibración del equipo docente tras la primera ronda), `fixed:N`, `rubric` y
   `legacy` (1.0 automático). Las filas que incumplen reciben además una
   re-verificación adversarial de fecha bidireccional.
+- **Una entrega sin cambios nunca saca menos.** Si el estudiante entrega el mismo
+  archivo que ya se calificó en una ronda anterior (huella de contenido idéntica, o
+  un archivo re-guardado listado con su evidencia en `sin_cambios.json`), la nota
+  final es al menos la de esa ronda (`Nota mínima (sin cambios)`, flags
+  `ENTREGA SIN CAMBIOS` / `NOTA PROTEGIDA`).
 - **Estados más allá de calificado:** `REVISADO (ANEXO)` (archivo leído dentro
   de la revisión integral del estudiante), `REEMPLAZADA` (versión anterior o
   duplicado) — más columnas advisory `Indicio IA (1-5)` (señal de IA sin

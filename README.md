@@ -75,6 +75,11 @@ flowchart LR
   `cap:N` (the round-1 TA calibration), `fixed:N`, `rubric` and `legacy` (automatic 1.0)
   remain available. Rows that break the rule also get a bidirectional adversarial
   date re-check.
+- **An unchanged resubmission never scores lower.** When a student hands in the same
+  file a delivered earlier round graded (identical content fingerprint, or a re-save
+  listed with evidence in `sin_cambios.json`), the final grade is at least that
+  round's grade (`Nota mínima (sin cambios)`, flags `ENTREGA SIN CAMBIOS` /
+  `NOTA PROTEGIDA`).
 - **Row states beyond graded:** `REVISADO (ANEXO)` (file read inside the
   student's integral review), `REEMPLAZADA` (older version/duplicate) — plus
   advisory columns `Indicio IA (1-5)` (unfiltered-AI signal, never part of the

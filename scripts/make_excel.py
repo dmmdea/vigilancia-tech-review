@@ -180,6 +180,17 @@ DETAIL_COLS = [
 ]
 
 
+def floor_of(r: dict):
+    """The unchanged-submission floor, rounded — only when the assembler set
+    it from the delivered history (piso_rondas is its provenance); a bare
+    nota_piso from anywhere else is ignored."""
+    piso = r.get("nota_piso")
+    if (not r.get("piso_rondas") or isinstance(piso, bool)
+            or not isinstance(piso, (int, float)) or not 1.0 <= piso <= 5.0):
+        return None
+    return q2(piso)
+
+
 def retro_text(r: dict) -> str:
     """The paste-ready student feedback: two strengths, two to improve.
     Review sets from before R25 carry a free-form `feedback_sugerido`."""
@@ -268,10 +279,9 @@ def normalize(r: dict) -> None:
     r["_final"] = apply_dq_policy(rubric) if dq else rubric
     # R30: the same submission as a delivered earlier round never scores
     # lower than it did then (assemble_results.py records the floor)
-    piso = r.get("nota_piso")
-    if (isinstance(piso, (int, float)) and not isinstance(piso, bool)
-            and 1.0 <= piso <= 5.0 and r["_final"] < piso):
-        r["_final"] = q2(piso)
+    piso = floor_of(r)
+    if piso is not None and r["_final"] < piso:
+        r["_final"] = piso
         if "NOTA PROTEGIDA" not in r["flags"]:
             r["flags"].append("NOTA PROTEGIDA")
 
@@ -442,8 +452,8 @@ def main() -> None:
             s.get("poc", ""), s.get("impacto", ""), s.get("comunicacion", ""),
             r.get("_rubric") if r.get("_rubric") is not None else "",
             r["_final"] if r["_final"] is not None else "",
-            (r.get("nota_piso") if reviewed and isinstance(r.get("nota_piso"), (int, float))
-             else ""),
+            # shown for unreviewed main files too: the human grader needs it
+            floor_of(r) if floor_of(r) is not None else "",
             retro_text(r) if reviewed else "",
             r.get("indicio_ia", ""),
             r.get("huella", "") or "",
@@ -500,7 +510,8 @@ def main() -> None:
     meta["A4"], meta["B4"] = "Ponderación", ("PoC 50% · Impacto 25% · Comunicación 25% = Nota rúbrica "
                                              "(redondeo a 0.01 hacia arriba en el medio, como ROUND de "
                                              "Excel); Nota final = Nota rúbrica salvo incumplimiento de la "
-                                             "regla de fecha (ver Regla de corte)")
+                                             "regla de fecha (ver Regla de corte), y nunca menor que la "
+                                             "Nota mínima de una entrega sin cambios")
     meta["A6"], meta["B6"] = "Indicio IA (1-5)", ("señal ADVISORY de uso de IA sin filtro sobre el material "
                                                   "entregado (1=curado a mano, 5=volcado sin filtrar); NUNCA "
                                                   "es componente de la nota")
