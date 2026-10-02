@@ -502,6 +502,14 @@ def main():
         key = "evidence_notes" if row["status"] == "revisado" else "status_reason"
         row[key] = ((row.get(key) or "") + " | " + text).strip(" |")
 
+    def same_tool_rounds(h, name, before):
+        """Earlier rounds whose recorded tool matches `name` (coarse key —
+        it only ever raises a flag for a human, never decides)."""
+        key = norm_tool(name)
+        return [r for r in h.get("rondas") or []
+                if key and norm_tool(r.get("herramienta")) == key
+                and r.get("fecha", "") < before]
+
     n_decisive = 0
     for row in results:
         h = hist.get(fid_of.get(row.get("id"))) if hist else None
@@ -514,14 +522,56 @@ def main():
             row["edad_a_entrega"] = round(months_between(launch, entrega), 1)
         fa = str(row.get("fecha_ancla") or "").strip()
         if not fa:
-            continue                     # review set from before R26
+            # historial.json exists, so this run is anchor-aware: a graded
+            # row without an anchor was measured from an unknown date
+            add_flags(row, "VERIFICAR FECHA", "REVISAR MANUALMENTE")
+            add_note(row, "La revisión no declaró fecha ancla: no se sabe "
+                          "desde qué fecha se midió la edad de la herramienta.")
+            continue
         allowed = h.get("anclas_permitidas") or []
         if fa not in allowed:
             add_flags(row, "VERIFICAR FECHA", "REVISAR MANUALMENTE")
             add_note(row, f"Fecha ancla {fa} fuera de las permitidas para este "
                           f"estudiante ({', '.join(allowed)}).")
-        rr = next((r for r in h.get("rondas") or [] if r.get("fecha") == fa),
-                  None)
+        anchor, _ = _as_date(fa)
+        age = row.get("age_months")
+        conf_ok = row.get("verification_confidence") in ("alta", "media")
+        if anchor and launch and conf_ok and isinstance(age, (int, float)):
+            recomputed = months_between(launch, anchor)
+            if (age > 4.0) != (recomputed > 4.0):
+                add_flags(row, "VERIFICAR FECHA", "REVISAR MANUALMENTE")
+                add_note(row, f"Edad reportada {age} vs calculada desde la "
+                              f"fecha ancla {fa}: {recomputed:.2f} meses — "
+                              "quedan a lados distintos del corte de 4.0.")
+            if (row.get("disqualified") and recomputed <= 4.0
+                    and "general" not in str(row.get("dq_reason") or "").lower()):
+                add_flags(row, "VERIFICAR FECHA", "REVISAR MANUALMENTE")
+                add_note(row, f"Descalificada, pero desde la fecha ancla {fa} "
+                              f"la herramienta tiene {recomputed:.1f} meses "
+                              "(≤ 4.0): la DESCALIFICACIÓN puede ser "
+                              "INCORRECTA; decisión humana requerida.")
+        # "the FIRST round": an earlier round already shows the same tool
+        tool_now = row.get("tool") if fa == h.get("fecha_entrega") else None
+        rr0 = next((r for r in h.get("rondas") or [] if r.get("fecha") == fa),
+                   None)
+        earlier = same_tool_rounds(h, tool_now or (rr0 or {}).get("herramienta"),
+                                   fa)
+        if earlier and (rr0 is not None or row.get("disqualified")):
+            first = earlier[0]
+            fdate, _ = _as_date(first.get("fecha"))
+            edad_first = (round(months_between(launch, fdate), 1)
+                          if launch and fdate else None)
+            add_flags(row, "VERIFICAR FECHA", "REVISAR MANUALMENTE")
+            add_note(row, f"La misma herramienta parece estar ya en "
+                          f"{first['ronda']} ({first['fecha']}: "
+                          f"«{first.get('herramienta')}»): la edad se mediría "
+                          "desde esa primera ronda"
+                          + (f", donde tendría {edad_first} meses"
+                             if edad_first is not None else "")
+                          + (". La DESCALIFICACIÓN puede ser INCORRECTA"
+                             if row.get("disqualified") and edad_first is not None
+                             and edad_first <= 4.0 else "") + ".")
+        rr = rr0
         if fa == h.get("fecha_entrega") or rr is None:
             continue
         row["herramienta_ronda_ancla"] = f"{rr['ronda']}: {rr['herramienta']}"
@@ -677,6 +727,9 @@ def main():
             # R26: is today's capability really the one of the anchor round?
             mh = _norm_verdict(c.get("misma_herramienta"))
             edad_e = row.get("edad_a_entrega")
+            c_notes = c.get("notes")
+            c_notes = (" ".join(map(str, c_notes)) if isinstance(c_notes, list)
+                       else str(c_notes or ""))
             if mh in ("no", "no_concluyente") and row.get("herramienta_ronda_ancla"):
                 add_flags(row, "VERIFICAR FECHA",
                           *(("REVISAR MANUALMENTE",) if mh == "no" else ()))
@@ -690,27 +743,36 @@ def main():
                             "meses: la fila podría quedar por FUERA de la "
                             "ventana; decisión humana requerida. "
                             if fuera else "")
-                         + (c.get("notes") or ""))
-            elif (mh == "si" and not row.get("herramienta_ronda_ancla")
-                  and row.get("disqualified")):
-                # the reverse error: a DQ measured at the submission date
-                # although the student carried the same tool from earlier
-                rs = str(c.get("ronda_misma_herramienta") or "").strip()
+                         + c_notes)
+            elif mh == "si" and str(c.get("ronda_misma_herramienta") or "").strip():
+                # the reverse error: the age was measured from a date LATER
+                # than the first round with this tool (the submission date,
+                # or a later round) — a DQ there may be the calendar's doing
+                rs = str(c.get("ronda_misma_herramienta")).strip()
                 hh = hist.get(fid_of.get(row.get("id"))) if hist else None
                 rr = next((r for r in (hh or {}).get("rondas") or []
                            if r.get("ronda") == rs), None)
                 launch, _ = _as_date(row.get("verified_launch_date"))
                 then, _ = _as_date(rr.get("fecha")) if rr else (None, None)
+                now_anchor = str(row.get("fecha_ancla") or "")
+                if rr is None or (now_anchor and rr.get("fecha", "") >= now_anchor):
+                    if rr is None:
+                        add_flags(row, "VERIFICAR FECHA")
+                        add_note(row, "VERIFICACIÓN DE ANCLA: el verificador "
+                                 f"nombra la ronda «{rs}», que no está en el "
+                                 "historial de este estudiante. " + c_notes)
+                    continue
                 edad_r = (round(months_between(launch, then), 1)
                           if launch and then else None)
                 add_flags(row, "VERIFICAR FECHA", "REVISAR MANUALMENTE")
                 add_note(row, "VERIFICACIÓN DE ANCLA: el verificador ve la "
-                         f"MISMA herramienta desde {rs or 'una ronda anterior'}"
-                         + (f" ({rr['fecha']}), donde tendría {edad_r} meses"
+                         f"MISMA herramienta desde {rs} ({rr['fecha']})"
+                         + (f", donde tendría {edad_r} meses"
                             if edad_r is not None else "")
-                         + ". La DESCALIFICACIÓN puede ser INCORRECTA (llevar "
-                           "la misma herramienta es válido); decisión humana "
-                           "requerida. " + (c.get("notes") or ""))
+                         + (". La DESCALIFICACIÓN puede ser INCORRECTA (llevar "
+                            "la misma herramienta es válido)"
+                            if row.get("disqualified") else "")
+                         + "; decisión humana requerida. " + c_notes)
     if date_checks:
         print(f"date_checks: {len(date_checks)} recibidos, {len(applied_ids)} "
               f"aplicados ({len(older_ids)} con evidencia de fecha más vieja, "

@@ -206,6 +206,8 @@ otro estudiante, está vacía: reescríbela.
   ENVIO ANTERIOR INCLUIDA las asigna el ensamblador, no tú.) Cualquier otra
   observación libre va en `observations`, no como flag.
 - `fecha_ancla`: SOLO una de {{anclas_permitidas}}; `ancla_motivo`: frase corta.
+- Nunca copies en ningún campo contraseñas, credenciales ni datos personales
+  que aparezcan en el material: menciona que existen, sin reproducirlos.
 - `indicio_ia`: entero 1-5 (nunca decimal, nunca texto).
 - `retroalimentacion`: `{"fortalezas": [2 frases], "por_mejorar": [2 frases]}`,
   cada frase de máximo 15 palabras, sin viñetas ni numeración.

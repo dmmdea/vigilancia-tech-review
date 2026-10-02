@@ -60,12 +60,14 @@ que la revisión aceptó. No calificas nada; solo fechas.
    capacidad, aunque el caso haya mejorado), "no" (cambió de herramienta o de
    capacidad: entonces la edad se mide a la fecha de entrega) o
    "no_concluyente".
-   Caso inverso, SOLO para filas descalificadas cuyo ancla es la fecha de
-   entrega: si el estudiante presentó esta MISMA capacidad en una ronda
-   anterior (lista de arriba), la descalificación pudo medirse mal. Responde
-   `misma_herramienta: "si"` y pon en `ronda_misma_herramienta` la PRIMERA
-   ronda en que la presentó, escrita tal cual aparece en la lista.
-   En cualquier otro caso, "no_aplica".
+   Además, la edad se mide desde la PRIMERA ronda con la misma capacidad. Si
+   el estudiante ya la presentó en una ronda ANTERIOR a la del ancla (o el
+   ancla es la fecha de entrega y la capacidad aparece en la lista de
+   arriba), la edad pudo medirse mal y, en una fila descalificada, la
+   descalificación también. Responde `misma_herramienta: "si"` y pon en
+   `ronda_misma_herramienta` esa PRIMERA ronda, escrita tal cual aparece en la
+   lista.
+   Si nada de esto aplica, "no_aplica".
 
 ## Devuelve SOLO este JSON
 ```json

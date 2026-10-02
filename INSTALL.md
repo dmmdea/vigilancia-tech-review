@@ -319,7 +319,7 @@ acusados de reenviar el mismo archivo usando la huella de un archivo de otra
 ronda. Si la fuente mezcla tareas y no le dices cuál, el script se niega.
 
 El `idTarea` es la segunda mitad del nombre de la carpeta de Canvas:
-`11717-467275 - Juan David Pinto - ...` → `--asignacion=467275`.
+`12345-467275 - Nombre Apellido - ...` → `--asignacion=467275`.
 
 ---
 

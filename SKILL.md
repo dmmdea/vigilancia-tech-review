@@ -159,9 +159,14 @@ Matching is by `Clave`; a round without `Clave` matches by EXACT normalized
 name only and is labelled so (the assembler flags any anchor that rests on
 it). A round with no `Meta - <ronda>` sheet needs `--round-date` — the script
 refuses to guess (TAs rename sheets: one delivered master carried the week-4
-ranking next to a meta sheet still named for week 3). Print-out lists every
-student matched only by name or with no history. First round of a course: no
-masters yet, so pass none and every anchor is the submission date.
+ranking next to a meta sheet still named for week 3). A round's date must be
+its SUBMISSION deadline: the `Meta` fallback is that round's grading date,
+which is the same only when the round was graded on the deadline day — the
+print-out says which source each date came from; correct any that differ with
+`--round-date`. It also lists every student matched only by name or with no
+history. First round of a course: pass no `--master` and every anchor is the
+submission date. A Drive-link run has no Canvas timestamps: pass
+`--fecha-entrega-defecto=<deadline>`.
 
 ### 2. Make every file readable — whatever its format
 
@@ -175,10 +180,10 @@ where the harness's file tool cannot open the format (never "convert" a PNG):
 | Submitted | Becomes | Why |
 |---|---|---|
 | `.pdf` | as-is | vision (rasterize per adapter if needed) |
-| `.pptx .ppt .odp` | PDF | slide decks aren't readable directly |
+| `.pptx .ppt .odp` | PDF (LibreOffice → PowerPoint); a valid `.pptx` neither opens → rebuilt slide by slide (`pptx_extract.py`: text, notes, charts as data, images) | slide decks aren't readable directly; a renderer refusal is never the student's fault |
 | `.key` (Apple Keynote) | per slide: text + thumbnail + full-size images; embedded movies → keyframes | neither PowerPoint nor a stock LibreOffice opens modern `.key`; `keynote_extract.py` reads it with the standard library, in presentation order |
 | `.docx .doc .rtf` | PDF (Word COM → LibreOffice) | keeps embedded screenshots = the PoC evidence |
-| `.html .htm` | PDF (headless Chrome) | keeps the rendering |
+| `.html .htm` | PDF (headless Chrome) → screenshot → page source | keeps the rendering; heavy 3D pages time out in print-to-PDF |
 | `.png .jpg …` | passthrough | vision reads images directly |
 | `.xlsx .xls .csv` | `.txt` cell dump | data reads better as data |
 | `.mp4 .mov …` | keyframes (+ transcript) | the reviewer's own vision judges the frames |
@@ -188,7 +193,7 @@ Every submitted file also gets a content fingerprint (`huella`), carried into
 the Excel's `Huella` column. That is what lets a later round prove a student
 resubmitted the very same file instead of updating their case — a filename
 cannot, since students routinely keep the name and rewrite the deck.
-| `.zip` | extracted, contents re-routed | — |
+| `.zip` | extracted, contents re-routed; `__MACOSX/`, `._*`, `.DS_Store` skipped | OS furniture is not student work |
 | `.py .txt .md` | passthrough | text |
 
 Writes `materials.json`. It prints any video or audio lacking a transcript;

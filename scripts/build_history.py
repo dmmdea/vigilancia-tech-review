@@ -15,11 +15,18 @@ shown NOW is the one presented then, and validate_review.py checks the
 arithmetic against the dates listed here.
 
 Usage:
-    python build_history.py <workdir> --master=<xlsx> [--master=<xlsx>]...
-        [--round-date="<ronda>=YYYY-MM-DD"]...   # when a round has no
-                                                 # 'Meta - <ronda>' sheet
+    python build_history.py <workdir> [--master=<xlsx>]...
+        [--round-date="<ronda>=YYYY-MM-DD"]...   # a round's SUBMISSION
+                                                 # deadline (overrides Meta)
         [--fecha-entrega-defecto=YYYY-MM-DD]     # folders whose Canvas
                                                  # timestamp cannot be read
+                                                 # (e.g. a Drive-link run)
+
+No --master at all (a course's first round): every anchor is the student's
+own submission date. A round's date should be its SUBMISSION deadline; the
+'Meta - <ronda>' fallback is that round's grading date, which equals the
+deadline only when the round was graded the same day — the script prints
+which source each date came from so the operator can correct it.
 
 Reads <workdir>/review_plan.json and every 'Ranking - <ronda>' sheet of the
 masters (delivered results; graded rows only, Estado = REVISADO). A student
@@ -63,8 +70,18 @@ def norm_name(s):
     return " ".join(s.casefold().split())
 
 
+def longpath(p):
+    """Windows MAX_PATH: Drive-synced masters live under long folder names."""
+    if os.name != "nt":
+        return p
+    ap = os.path.abspath(p)
+    if ap.startswith("\\\\?\\"):
+        return ap
+    return ("\\\\?\\UNC\\" + ap[2:]) if ap.startswith("\\\\") else "\\\\?\\" + ap
+
+
 def norm_key(v):
-    """Excel may hand back 11717, 11717.0 or '11717 ' for the same Clave."""
+    """Excel may hand back 12345, 12345.0 or '12345 ' for the same Clave."""
     if v is None:
         return ""
     if isinstance(v, float) and v.is_integer():
@@ -101,14 +118,26 @@ def load_rounds(paths, overrides):
     rounds, seen, undated = [], {}, []
     for p in paths:
         try:
-            wb = load_workbook(p, read_only=True, data_only=True)
+            wb = load_workbook(longpath(p), read_only=True, data_only=True)
         except Exception as e:
             print(f"ERROR: no se pudo abrir {p}: {e}", file=sys.stderr)
             sys.exit(2)
+        # merge_rounds.py registers every round in '_Rondas' (Ronda | Ranking
+        # | Detalle | Meta) and shortens long sheet titles; the registry is
+        # the only reliable map from a title back to its round and Meta sheet
+        registry = {}
+        if "_Rondas" in wb.sheetnames:
+            for r in wb["_Rondas"].iter_rows(min_row=2, values_only=True):
+                if r and r[0] and len(r) >= 4 and r[1]:
+                    registry[str(r[1]).strip()] = (str(r[0]).strip(),
+                                                   str(r[3] or "").strip())
         for ws in wb.worksheets:
             if not ws.title.startswith("Ranking - "):
                 continue
-            ronda = ws.title[len("Ranking - "):].strip()
+            ronda, meta_title = registry.get(
+                ws.title, (ws.title[len("Ranking - "):].strip(), ""))
+            if not meta_title or meta_title not in wb.sheetnames:
+                meta_title = f"Meta - {ronda}"
             rows = list(ws.iter_rows(values_only=True))
             if not rows:
                 continue
@@ -144,18 +173,19 @@ def load_rounds(paths, overrides):
                           "primera.", file=sys.stderr)
                 continue
             fecha = overrides.get(ronda)
-            if not fecha and f"Meta - {ronda}" in wb.sheetnames:
-                meta = wb[f"Meta - {ronda}"]
-                for r in meta.iter_rows(values_only=True):
+            origen = "--round-date"
+            if not fecha and meta_title in wb.sheetnames:
+                for r in wb[meta_title].iter_rows(values_only=True):
                     if r and str(r[0] or "").strip() == "Fecha de corrida":
                         fecha = iso_date(r[1] if len(r) > 1 else None)
+                        origen = f"'{meta_title}' (fecha de CORRIDA)"
                         break
             if not fecha:
                 undated.append(f"{os.path.basename(p)} › {ws.title}")
                 continue
             seen[ronda] = len(graded)
-            rounds.append((ronda, fecha, f"{os.path.basename(p)} › {ws.title}",
-                           graded))
+            rounds.append((ronda, fecha, f"{os.path.basename(p)} › {ws.title}"
+                                         f" · fecha desde {origen}", graded))
     if undated:
         print("ERROR: rondas sin fecha (sin 'Meta - <ronda>' ni "
               "--round-date): " + "; ".join(undated) + ". Pasa "
@@ -211,7 +241,7 @@ def main():
         elif a.startswith("--"):
             print(f"ERROR: opción desconocida: {a}", file=sys.stderr)
             sys.exit(1)
-    if len(args) != 1 or not masters:
+    if len(args) != 1:
         print(__doc__, file=sys.stderr)
         sys.exit(1)
     work = args[0]
@@ -222,7 +252,7 @@ def main():
         print(f"ERROR: review_plan.json ilegible: {e}", file=sys.stderr)
         sys.exit(2)
 
-    rounds = load_rounds(masters, overrides)
+    rounds = load_rounds(masters, overrides) if masters else []
     by_key, by_name = {}, {}
     for ronda, fecha, _src, rows in rounds:
         for r in rows:
@@ -271,7 +301,10 @@ def main():
         json.dump({"rondas": [{"ronda": r, "fecha": d, "fuente": s}
                               for r, d, s, _rows in rounds],
                    "folders": out}, f, ensure_ascii=False, indent=2)
-    print("rondas: " + ", ".join(f"{r} = {d}" for r, d, _s, _x in rounds))
+    for r, d, s, _x in rounds:
+        print(f"ronda {r} = {d}  ({s})")
+    if not rounds:
+        print("sin maestros: toda fecha ancla es la fecha de entrega")
     print(f"historial.json: {len(out)} carpetas | con historial por Clave: "
           f"{stats['clave']} | solo por nombre: {stats['nombre']} | sin "
           f"historial: {stats['ninguna']}")

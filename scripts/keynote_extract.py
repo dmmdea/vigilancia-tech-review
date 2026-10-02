@@ -46,7 +46,10 @@ for _s in (sys.stdout, sys.stderr):
 IMAGE_EXT = {".png", ".jpg", ".jpeg", ".gif", ".tif", ".tiff", ".bmp", ".webp"}
 HEIC_EXT = {".heic", ".heif"}      # iPhone photos: converted to JPEG via ffmpeg
 VIEW_EXT = IMAGE_EXT | HEIC_EXT | {".pdf"}   # opened visually by the reviewer
-MOVIE_EXT = {".mp4", ".mov", ".m4v"}
+MOVIE_EXT = {".mp4", ".mov", ".m4v",          # routed through the video or
+             ".m4a", ".mp3", ".aac", ".wav",  # audio path by the caller —
+             ".aif", ".aiff"}                 # never dropped
+MAX_STREAM = 256 * 1024 * 1024   # one decompressed .iwa; real ones are KBs
 # Keynote's own furniture, not the student's content: template fills,
 # bullets, placeholder art, master/slide thumbnails, low-res duplicates.
 SKIP_DATA = re.compile(r"(^|/)(PresetImageFill|bullet_|PlaceholderImage|mt-|st-)"
@@ -58,11 +61,10 @@ MAX_SIDE = 2400            # downscale huge photos so any image reader opens the
 
 # ---- iwa decoding ------------------------------------------------------------
 def _snappy(buf):
-    """Raw (unframed) snappy decompression."""
-    pos = 0
-    while buf[pos] & 0x80:          # skip the uncompressed-length varint
-        pos += 1
-    pos += 1
+    """Raw (unframed) snappy decompression, checked against its own header."""
+    declared, pos = _varint(buf, 0)
+    if declared > MAX_STREAM:
+        raise ValueError("snappy: bloque declarado demasiado grande")
     out = bytearray()
     n = len(buf)
     while pos < n:
@@ -97,6 +99,10 @@ def _snappy(buf):
         start = len(out) - off
         for i in range(ln):         # copies may overlap their own output
             out.append(out[start + i])
+        if len(out) > declared:
+            raise ValueError("snappy: salida mayor que la declarada")
+    if len(out) != declared:        # a truncated literal must not pass
+        raise ValueError(f"snappy: {len(out)} bytes, declarados {declared}")
     return bytes(out)
 
 
@@ -110,6 +116,8 @@ def _iwa(data):
         pos += 4
         out += _snappy(data[pos:pos + ln])
         pos += ln
+        if len(out) > MAX_STREAM:
+            raise ValueError("iwa: flujo demasiado grande")
     return bytes(out)
 
 
@@ -286,7 +294,10 @@ def _write(z, name, dst, ffmpeg=None):
 def extract(src, outdir, ffmpeg=None):
     """Rebuild the deck into `outdir`. Returns a dict:
        slides: [{n, thumb, text, images}], movies: [{path, name, slide}],
-       text_path, order_exact, note.   Raises on an unreadable archive."""
+       text_path, order_exact, note.   Raises on an unreadable archive, and
+       on one that yields no slide content at all (that must surface as
+       "Keynote ilegible", never as a reviewable 0-slide deck)."""
+    outdir = os.path.abspath(outdir)
     os.makedirs(outdir, exist_ok=True)
     with zipfile.ZipFile(src) as z:
         names = z.namelist()
@@ -297,20 +308,26 @@ def extract(src, outdir, ffmpeg=None):
             m = re.search(r"-(\d+)\.[A-Za-z0-9]+$", n)
             if n.startswith("Data/") and m:
                 data_by_id[int(m.group(1))] = n
-        slide_files = {}
+        # Index/Slide.iwa, Index/Slide-<n>.iwa, Index/Slide-<n>-<m>.iwa — the
+        # one WITHOUT a number is a real slide too (in two real decks it was
+        # the title slide, carrying the tool name and launch date). Slides
+        # are therefore identified by the object ids INSIDE each file, never
+        # by the file name.
+        slide_objs, obj_file = {}, {}
         for n in names:
-            m = re.match(r"Index/Slide-(\d+)(?:-\d+)?\.iwa$", n)
-            if m:
-                slide_files[int(m.group(1))] = n
+            if re.match(r"Index/Slide(?:-[\d-]+)?\.iwa$", n):
+                slide_objs[n] = _objects(_iwa(z.read(n)))
+                for oid in slide_objs[n]:
+                    obj_file[oid] = n
         doc = _objects(_iwa(z.read("Index/Document.iwa")))
 
-        # slide node -> its slide (exactly one slide ref) + its thumbnail
+        # slide node -> the slide file it references + its thumbnail
         node_slide, node_thumb = {}, {}
         for oid, msgs in doc.items():
             for _t, _payload, orefs, drefs in msgs:
-                hits = [r for r in orefs if r in slide_files]
-                if len(hits) == 1:
-                    node_slide[oid] = hits[0]
+                files = {obj_file[r] for r in orefs if r in obj_file}
+                if len(files) == 1:
+                    node_slide[oid] = files.pop()
                     th = [data_by_id[d] for d in drefs
                           if d in data_by_id and "/st-" in data_by_id[d]]
                     node_thumb[oid] = th[0] if th else None
@@ -324,17 +341,27 @@ def extract(src, outdir, ffmpeg=None):
                         seq.append(i)
                 if len(seq) > len(best):
                     best = seq
+        def creation_order(fname):
+            nums = re.findall(r"\d+", fname)
+            return int(nums[0]) if nums else -1     # Slide.iwa came first
         order_exact = bool(best) and len(best) == len(node_slide) > 0
         if node_slide:
             ordered = best + sorted((n for n in node_slide if n not in best),
-                                    key=lambda n: node_slide[n])
+                                    key=lambda n: creation_order(node_slide[n]))
             plan = [(node_slide[n], node_thumb.get(n)) for n in ordered]
         else:
-            plan = [(sid, None) for sid in sorted(slide_files)]
+            plan = [(f, None) for f in sorted(slide_objs, key=creation_order)]
+        # a slide file no node points to (tree unreadable for it): keep it,
+        # last, rather than lose a slide
+        listed = {f for f, _t in plan}
+        plan += [(f, None) for f in sorted(slide_objs, key=creation_order)
+                 if f not in listed]
+        if len(plan) != len(listed):
+            order_exact = False
 
         slides, movies, used = [], [], set()
-        for k, (sid, thumb) in enumerate(plan, 1):
-            objs = _objects(_iwa(z.read(slide_files[sid])))
+        for k, (sfile, thumb) in enumerate(plan, 1):
+            objs = slide_objs[sfile]
             texts, drefs = [], []
             for _oid, msgs in objs.items():
                 for t, payload, _o, dr in msgs:
@@ -384,6 +411,9 @@ def extract(src, outdir, ffmpeg=None):
                 movies.append({"path": dst, "name": os.path.basename(name),
                                "slide": None})
 
+    if not any(s["text"] or s["thumb"] or s["images"] for s in slides) \
+            and not loose and not movies:
+        raise ValueError("el archivo no contiene ninguna lámina legible")
     text_path = os.path.join(outdir, "texto_laminas.txt")
     with open(text_path, "w", encoding="utf-8") as f:
         for s in slides:

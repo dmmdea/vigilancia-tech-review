@@ -46,8 +46,8 @@ Checks (each one occurred in real output in the 2026-08-14 pilot run):
     round in which the student presented that same tool, or from their own
     submission date for a new tool — never from the run date. `fecha_ancla`
     must be one of the allowed dates, the verified launch cannot be later
-    than it, and `age_months` must match the two dates (±0.3 months; ±0.6
-    when the launch date is month-precision).
+    than it, and `age_months` must match the two dates (±0.15 months and
+    never across the 4.0 cutoff; ±0.6 when the launch date is month-precision).
 
 Canonical flags (the only ones that stay in `flags`):
   VERIFICAR FECHA · DISCREPANCIA FECHA · ENTREGA SIN PPT · ENTREGA DUPLICADA
@@ -93,7 +93,12 @@ STUDENT_OK = re.compile(r"^[^()]{0,60}(\(c[oó]digo [\w]+\))?$", re.IGNORECASE)
 # --- retroalimentación (R25) -------------------------------------------------
 RETRO_PARTS = (("fortalezas", "fortaleza"), ("por_mejorar", "por mejorar"))
 RETRO_MAX_WORDS = 20          # hard cap; the prompt asks for 15
-RETRO_BULLET = re.compile(r"^\s*(?:[-•*·▪●]+|\d+\s*[.)])\s*")
+# A list marker needs whitespace after it: "2.5 horas por reporte" and
+# "-5% de error" are content, not bullets (an earlier pattern turned them
+# into "5 horas" and "5% de error" — text that is pasted to the student).
+RETRO_BULLET = re.compile(r"^\s*(?:[•*·▪●]+\s*|-\s+|\d{1,2}[.)]\s+)")
+AGE_TOL_DAY = 0.15            # one-decimal rounding + calendar vs 30.44 days
+AGE_TOL_MONTH = 0.6           # launch known only to the month (15th assumed)
 # How the monitores do NOT write (vtr voice notes): the reviewer narrating
 # itself, praise formulas, em dashes, grades inside the text, a "next time"
 # closer that means nothing on a final submission. Only unambiguous forms:
@@ -107,8 +112,14 @@ RETRO_BANNED = (
      "fórmula de elogio"),
     (re.compile(r"\bpara la pr[oó]xima\b", re.IGNORECASE),
      "cierre 'para la próxima'"),
-    (re.compile(r"\b\d(?:[.,]\d+)?\s*/\s*5\b|\bpuntaje\b|\bsobre 5\b",
-                re.IGNORECASE), "nota o puntaje dentro del texto"),
+    # a GRADE, not any number: "4.5/5", "nota de 3,8", "calificación 4.0".
+    # "Prueba sobre 5 facturas", "acierta 4/5 casos" or "puntaje de leads"
+    # are content and must pass (each false hit costs a retry, two cost the
+    # student a NO REVISADO).
+    (re.compile(r"\b[1-5][.,]\d{1,2}\s*/\s*5\b|"
+                r"\b(?:nota|calificaci[oó]n)\s+(?:de\s+|final\s+|"
+                r"r[uú]brica\s+)?[1-5](?:[.,]\d{1,2})\b", re.IGNORECASE),
+     "nota o puntaje dentro del texto"),
     (re.compile("—"), "raya (—)"),
 )
 
@@ -368,6 +379,14 @@ def normalize_review(r, expect_pages=None, expect_materials=None,
         problems.extend(retro_problems)
 
     # --- fecha ancla (R26) ----------------------------------------------------
+    # shape first, always: a list/number here once reached make_excel raw and
+    # would have crashed the workbook for every student
+    for k_ in ("fecha_ancla", "ancla_motivo"):
+        v_ = r.get(k_)
+        if isinstance(v_, list):
+            r[k_] = " ".join(str(x) for x in v_).strip()
+        elif v_ is not None and not isinstance(v_, str):
+            r[k_] = str(v_)
     if anchor_dates is not None:
         fa = str(r.get("fecha_ancla") or "").strip()
         r["fecha_ancla"] = fa
@@ -393,11 +412,19 @@ def normalize_review(r, expect_pages=None, expect_materials=None,
                     "ella — usa la ronda correcta o la fecha de entrega")
             elif isinstance(age, (int, float)):
                 expected = months_between(launch, anchor)
-                tol = 0.3 if prec == "dia" else 0.6
+                tol = AGE_TOL_DAY if prec == "dia" else AGE_TOL_MONTH
                 if abs(age - expected) > tol:
                     problems.append(
                         f"age_months={age} no coincide con fecha_ancla − "
                         f"fecha verificada ({expected:.1f} meses; días/30.44)")
+                elif (age > 4.0) != (expected > 4.0) and prec == "dia":
+                    # inside the tolerance but on the other side of the
+                    # cutoff: exactly the run-date error R26 removes
+                    problems.append(
+                        f"age_months={age} y la edad calculada desde "
+                        f"fecha_ancla ({expected:.2f}) quedan a lados "
+                        "distintos del corte de 4.0 meses — recalcula con "
+                        "la fecha ancla")
 
     # --- tool length --------------------------------------------------------
     tool = (r.get("tool") or "").strip()

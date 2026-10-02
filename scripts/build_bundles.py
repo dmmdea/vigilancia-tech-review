@@ -183,8 +183,9 @@ def describe(items, use_images):
                       "evidence_notes.\n"
                       "   En ningún caso inventes lo que se oye."
                     + suffix)
-        elif k == "keynote":
+        elif k == "deck_rebuilt":
             slides = it.get("slides") or []
+            keynote = it.get("origin") == "keynote"
             order = ("en el orden de la presentación" if it.get("order_exact")
                      else "en orden APROXIMADO (no se pudo leer el orden "
                           "exacto: no castigues la narrativa por el orden)")
@@ -197,20 +198,29 @@ def describe(items, use_images):
                 rows.append(f"     - Lámina {s['n']}: {th}{imgs}")
             loose = "".join(f"\n     - imagen sin lámina identificada: `{p}`"
                             for p in it.get("loose_images") or [])
+            why = ("Es una presentación en formato Apple Keynote, "
+                   "reconstruida lámina por lámina porque el .key no se "
+                   "puede abrir aquí" if keynote else
+                   "Es una presentación .pptx que ningún programa pudo abrir "
+                   "en esta máquina (no es culpa del estudiante): se "
+                   "reconstruyó lámina por lámina desde el archivo, SIN vista "
+                   "del diseño")
+            look = ("Mirar la miniatura de CADA lámina (composición; es "
+                    "pequeña, el texto fino está en el archivo de texto) y "
+                    "abrir CADA imagen en resolución completa" if keynote else
+                    "Abrir CADA imagen de cada lámina en resolución completa "
+                    "(los gráficos vienen como datos en el archivo de texto)")
             lines.append(
-                f"{n}. [PRESENTACIÓN KEYNOTE] «{label}» — {len(slides)} "
+                f"{n}. [PRESENTACIÓN RECONSTRUIDA] «{label}» — {len(slides)} "
                 f"láminas, {order}.\n"
-                "   Es una presentación de diapositivas en formato Apple "
-                "Keynote, reconstruida lámina por lámina porque el .key no "
-                "se puede abrir aquí. Debes:\n"
+                f"   {why}. Debes:\n"
                 f"   a) Leer el texto COMPLETO de todas las láminas: "
                 f"`{it.get('text_path')}`\n"
-                "   b) Mirar la miniatura de CADA lámina (composición; es "
-                "pequeña, el texto fino está en el archivo de texto) y abrir "
-                "CADA imagen en resolución completa (las capturas suelen ser "
-                "la evidencia de la PoC):\n" + "\n".join(rows) + loose + "\n"
-                f"   Cita «lámina N» en las justificaciones. No castigues el "
-                "formato .key ni la baja resolución de las miniaturas."
+                f"   b) {look} (las capturas suelen ser la evidencia de la "
+                "PoC):\n" + "\n".join(rows) + loose + "\n"
+                "   Cita «lámina N» en las justificaciones. No castigues el "
+                "formato ni la falta de vista del diseño: en 'comunicación' "
+                "juzga la estructura y la claridad del contenido."
                 + suffix)
         elif k == "error":
             lines.append(
@@ -319,7 +329,12 @@ def main():
             (e["status"] == "no_deck" and items)          # (a) no deck at all
             or (e["status"] == "review" and e.get("evidence"))  # (b) deck+extras
             or carried                                     # (c) carry-forward
-            or (include_all and e["status"] == "review"))  # (d) --all
+            or (include_all and e["status"] == "review")   # (d) --all
+            # (e) the deck exists but never became a PDF (rebuilt slide by
+            # slide, or unreadable): the single-deck template needs a PDF
+            or (e["status"] == "review" and items
+                and not any(i["kind"] == "pdf" for i in items)
+                and fid not in conv))
         if not needs_bundle:
             continue
 
@@ -337,7 +352,8 @@ def main():
 
         block, labels = describe(items, use_images)
         was_no_deck = e["status"] == "no_deck"
-        has_keynote = any(it["kind"] == "keynote" for it in items)
+        has_keynote = any(it["kind"] == "deck_rebuilt"
+                          and it.get("origin") == "keynote" for it in items)
         # the {{no_deck_note}} text the bundle template requires — produced
         # HERE so every orchestrator gets identical fairness framing
         if was_no_deck and has_keynote:
@@ -390,7 +406,7 @@ def main():
                 (it.get("pages") if isinstance(it.get("pages"), int) else 0)
                 if it["kind"] == "pdf"
                 else len(it.get("frames") or []) if it["kind"] == "video"
-                else len(it.get("slides") or []) if it["kind"] == "keynote"
+                else len(it.get("slides") or []) if it["kind"] == "deck_rebuilt"
                 else 1 if it["kind"] in ("image", "text")
                 # audio counts ONLY once transcribed: nobody can be asked to
                 # cite a line from a file no reviewer could hear

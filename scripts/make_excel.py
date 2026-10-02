@@ -142,10 +142,13 @@ def retro_text(r: dict) -> str:
 
 
 def ancla_text(r: dict) -> str:
-    fa = (r.get("fecha_ancla") or "").strip()
+    def s(v):
+        return (" ".join(map(str, v)) if isinstance(v, list)
+                else str(v or "")).strip()
+    fa = s(r.get("fecha_ancla"))
     if not fa:
         return ""
-    motivo = (r.get("ancla_motivo") or "").strip()
+    motivo = s(r.get("ancla_motivo"))
     return f"{fa} · {motivo}" if motivo else fa
 
 
