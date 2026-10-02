@@ -24,6 +24,10 @@ The final grade is computed HERE (single source of truth):
         legacy   final = 1.0 (the original automatic-1.0 rule)
     Every mode except penalty EXCLUDES the row from the ranking (it sorts
     after the valid rows and cannot be top-5).
+    unchanged resubmission (`nota_piso`, set by assemble_results.py when the
+    file is the same as a delivered earlier round) -> Nota final is never
+    below that round's grade (operator rule 2026-10-01); flag NOTA PROTEGIDA
+    when the floor raised it, column "Nota mínima (sin cambios)" always shown.
 A reviewed row with missing/invalid/out-of-range scores is DOWNGRADED to
 "no_revisado" with a visible reason — it never renders as a normal graded row
 and never aborts the workbook (fairness: every submission stays visible).
@@ -156,6 +160,7 @@ RANK_COLS = [
     ("¿Descalificado?", 13),
     ("Razón DQ", 30), ("PoC (50%)", 10), ("Impacto (25%)", 10),
     ("Comunicación (25%)", 12), ("Nota rúbrica", 10), ("Nota final", 10),
+    ("Nota mínima (sin cambios)", 12),
     ("Retroalimentación", 62),
     ("Indicio IA (1-5)", 10),
     ("Huella", 34),
@@ -163,7 +168,7 @@ RANK_COLS = [
     ("Estado", 16), ("Detalle estado", 30),
 ]
 GRADE_COLS = {"PoC (50%)", "Impacto (25%)", "Comunicación (25%)",
-              "Nota rúbrica", "Nota final"}
+              "Nota rúbrica", "Nota final", "Nota mínima (sin cambios)"}
 
 DETAIL_COLS = [
     ("Archivo", 38), ("Herramienta", 24), ("Slides leídas / total", 12),
@@ -261,6 +266,14 @@ def normalize(r: dict) -> None:
                 + Decimal("0.25") * Decimal(str(com)))
     r["_rubric"] = rubric
     r["_final"] = apply_dq_policy(rubric) if dq else rubric
+    # R30: the same submission as a delivered earlier round never scores
+    # lower than it did then (assemble_results.py records the floor)
+    piso = r.get("nota_piso")
+    if (isinstance(piso, (int, float)) and not isinstance(piso, bool)
+            and 1.0 <= piso <= 5.0 and r["_final"] < piso):
+        r["_final"] = q2(piso)
+        if "NOTA PROTEGIDA" not in r["flags"]:
+            r["flags"].append("NOTA PROTEGIDA")
 
 
 def excluded(r: dict) -> bool:
@@ -429,6 +442,8 @@ def main() -> None:
             s.get("poc", ""), s.get("impacto", ""), s.get("comunicacion", ""),
             r.get("_rubric") if r.get("_rubric") is not None else "",
             r["_final"] if r["_final"] is not None else "",
+            (r.get("nota_piso") if reviewed and isinstance(r.get("nota_piso"), (int, float))
+             else ""),
             retro_text(r) if reviewed else "",
             r.get("indicio_ia", ""),
             r.get("huella", "") or "",
@@ -498,6 +513,11 @@ def main() -> None:
     meta["A8"], meta["B8"] = "Retroalimentación", ("dos fortalezas y dos por mejorar, en frases "
                                                    "cortas, lista para copiar al estudiante "
                                                    "(pedido del equipo docente)")
+    meta["A9"], meta["B9"] = "Nota mínima (sin cambios)", (
+        "si la entrega es la MISMA que la de una ronda anterior (huella de contenido "
+        "idéntica, o un archivo re-guardado con el mismo contenido, con la evidencia en "
+        "las notas), la nota final nunca es menor que la nota que recibió en esa ronda. "
+        "Flag ENTREGA SIN CAMBIOS; NOTA PROTEGIDA cuando ese mínimo subió la nota")
     meta.column_dimensions["A"].width = 20
     meta.column_dimensions["B"].width = 80
 

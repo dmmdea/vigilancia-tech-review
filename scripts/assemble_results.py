@@ -620,6 +620,56 @@ def main():
         print(f"fecha ancla: {n_decisive} fila(s) válidas solo por la regla de "
               "la misma herramienta (ancla_decisiva — van todas a 5bis)")
 
+    # ---- R30: an unchanged resubmission may never score lower ------------
+    # Operator rule (2026-10-01, final round): "if the submission did not
+    # change from a past round to this one, the grade should never be lower".
+    # Unchanged = the same content fingerprint (huella) as a delivered earlier
+    # round, or an operator-listed re-save in <work>/sin_cambios.json:
+    #   {"entradas": [{"folder_id", "rondas": ["Semana 4", ...],
+    #                  "evidencia": "texto idéntico salvo ..."}]}
+    # (a re-saved .pptx changes its bytes but not its content). This only
+    # records the floor; make_excel.py applies it — single source of truth.
+    manual = (load(work, "sin_cambios.json", required=False) or {}).get("entradas", [])
+    manual_by_fid = {}
+    for m in manual:
+        if not m.get("folder_id") or not m.get("rondas") or not str(m.get("evidencia") or "").strip():
+            print(f"AVISO: entrada de sin_cambios.json incompleta {m!r} — se ignora "
+                  "(requiere folder_id, rondas y evidencia).", file=sys.stderr)
+            continue
+        manual_by_fid[m["folder_id"]] = m
+    n_floor = 0
+    for row in results:
+        fid = fid_of.get(row.get("id"))
+        h = hist.get(fid) if hist else None
+        if row["status"] != "revisado" or not h:
+            continue
+        same = []
+        for r in h.get("rondas") or []:
+            if r.get("coincidencia") != "clave":
+                continue      # a name-only match cannot vouch for the grade
+            if row.get("huella") and r.get("huella") == row.get("huella"):
+                same.append((r, "huella de contenido idéntica"))
+        m = manual_by_fid.get(fid)
+        if m:
+            for r in h.get("rondas") or []:
+                if (r.get("ronda") in m["rondas"] and r.get("coincidencia") == "clave"
+                        and not any(r is s for s, _ in same)):
+                    same.append((r, f"contenido sin cambios: {m['evidencia']}"))
+        same = [(r, why) for r, why in same if isinstance(r.get("nota_final"), (int, float))]
+        if not same:
+            continue
+        best = max(same, key=lambda s: s[0]["nota_final"])
+        row["nota_piso"] = best[0]["nota_final"]
+        row["piso_rondas"] = [f"{r['ronda']} ({r['nota_final']:.2f})" for r, _ in same]
+        add_flags(row, "ENTREGA SIN CAMBIOS")
+        add_note(row, "ENTREGA SIN CAMBIOS respecto a "
+                 + ", ".join(f"{r['ronda']} ({why}; nota entregada {r['nota_final']:.2f})"
+                             for r, why in same)
+                 + f". La nota final no puede ser menor que {best[0]['nota_final']:.2f}.")
+        n_floor += 1
+    if hist:
+        print(f"entrega sin cambios: {n_floor} fila(s) con nota mínima protegida")
+
     # ---- R19: apply adversarial date-check verdicts as FLAGS --------------
     # The checker can prove a capability is older than the accepted date; the
     # pipeline surfaces that loudly but never silently re-grades or DQs —

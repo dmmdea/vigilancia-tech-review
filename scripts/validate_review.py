@@ -75,6 +75,7 @@ CANONICAL_FLAGS = (
     "IMPACTO NO CUANTIFICADO", "HERRAMIENTA GENERAL - FUNCION ESPECIFICA",
     "SPOT-CHECK FALLIDO", "EVIDENCIA NO LEGIBLE",
     "EVIDENCIA DE ENVIO ANTERIOR INCLUIDA",
+    "ENTREGA SIN CAMBIOS",      # assembler (R30): same submission as a past round
 )
 DATE_OK = re.compile(r"^(\d{4}-(0[1-9]|1[0-2])(-(0[1-9]|[12]\d|3[01]))?)?$")
 DATE_FIND = re.compile(r"\d{4}-(?:0[1-9]|1[0-2])(?:-(?:0[1-9]|[12]\d|3[01]))?")

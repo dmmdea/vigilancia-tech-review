@@ -26,7 +26,15 @@ turns a pass into a fail). The row ranks with everyone and can be top-5; the
 reviewer's `disqualified` field still records that the rule was broken, and the
 Excel labels it `¿Penalizada?`. Exclusion policies remain available when the
 teaching team decides otherwise: `cap:N` (the 2026-08-21 TA calibration, cap at
-3.0), `fixed:N`, `rubric` (flag only) and `legacy` (automatic 1.0). General-purpose tools (ChatGPT,
+3.0), `fixed:N`, `rubric` (flag only) and `legacy` (automatic 1.0). **Unchanged
+resubmissions never score lower** (operator, 2026-10-01: "if the submission did not
+change from a past round to this one, the grade should never be lower"): when the
+file is the same as one a delivered earlier round graded — identical content
+fingerprint, or a re-save listed with its evidence in `$WORK/sin_cambios.json` — the
+`Nota final` is at least that round's grade (`ENTREGA SIN CAMBIOS`, `NOTA PROTEGIDA`
+when the floor raised it). In the first final round 25 students resubmitted an
+identical file and were graded lower by the stricter reviewers and date rule.
+General-purpose tools (ChatGPT,
 Gemini, Copilot, Claude…) are invalid unless the subject is a specific recently launched
 feature. Scale: 1.0–5.0.
 
@@ -321,6 +329,13 @@ With `historial.json` present it also checks every anchor against the delivered
 history (anchor outside the allowed dates, a round matched only by name, a
 verified date >1 month away from that round's) and marks `ancla_decisiva` on
 every row that is valid ONLY because its age was measured from an earlier round.
+It also records `nota_piso` on every row whose file is the same as a delivered
+earlier round (by `Clave` only — a name match cannot vouch for a grade): identical
+`Huella`, or an entry in the optional `$WORK/sin_cambios.json`
+(`{"entradas": [{"folder_id", "rondas": ["Semana 4"], "evidencia": "texto idéntico
+salvo …"}]}`) for a file re-saved with the same content. Build that file only from
+a real comparison (same slide count, extracted text ≥ 99% similar, and say what the
+remaining difference is); never from the filename alone.
 
 ### 5bis. Adversarial date re-verification — top candidates NEVER ship unchecked
 

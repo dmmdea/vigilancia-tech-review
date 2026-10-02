@@ -42,6 +42,7 @@ Writes <workdir>/historial.json:
    "folders": {<folder_id>: {"student_name", "canvas_key", "fecha_entrega",
                "rondas": [{"ronda", "fecha", "herramienta",
                            "fecha_verificada", "descalificado",
+                           "archivo", "huella", "nota_final",
                            "coincidencia": "clave" | "nombre"}],
                "anclas_permitidas": ["YYYY-MM-DD", ...],
                "historial_block": "<texto para el revisor>"}}}
@@ -87,6 +88,18 @@ def norm_key(v):
     if isinstance(v, float) and v.is_integer():
         v = int(v)
     return str(v).strip()
+
+
+def num(v):
+    """A delivered grade cell -> float, or None (blank / text / bool)."""
+    if isinstance(v, bool) or v is None:
+        return None
+    if isinstance(v, (int, float)):
+        return float(v)
+    try:
+        return float(str(v).strip().replace(",", "."))
+    except ValueError:
+        return None
 
 
 def iso_date(v):
@@ -166,6 +179,11 @@ def load_rounds(paths, overrides):
                     "descalificado": str(cell(r, "¿Descalificado?")
                                          or cell(r, "¿Penalizada?") or "")
                     .strip().upper().startswith("S"),
+                    # what the student handed in and the grade they were
+                    # given: an unchanged resubmission may never score lower
+                    "archivo": str(cell(r, "Archivo") or "").strip(),
+                    "huella": str(cell(r, "Huella") or "").strip() or None,
+                    "nota_final": num(cell(r, "Nota final")),
                 })
             if ronda in seen:
                 if len(graded) != seen[ronda]:
@@ -274,7 +292,9 @@ def main():
             rec = {"ronda": ronda, "fecha": fecha,
                    "herramienta": r["herramienta"],
                    "fecha_verificada": r["fecha_verificada"],
-                   "descalificado": r["descalificado"]}
+                   "descalificado": r["descalificado"],
+                   "archivo": r["archivo"], "huella": r["huella"],
+                   "nota_final": r["nota_final"]}
             if r["clave"]:
                 by_key.setdefault(r["clave"], []).append(dict(rec, coincidencia="clave"))
             elif r["nombre"]:
