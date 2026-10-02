@@ -101,23 +101,55 @@ RANK_COLS = [
     ("Clave", 12),
     ("Herramienta", 26), ("Fecha lanz. declarada", 15),
     ("Fecha lanz. verificada", 15), ("Fuente verificación", 40),
-    ("Confianza", 10), ("Edad (meses)", 9), ("¿Descalificado?", 13),
+    ("Confianza", 10), ("Fecha ancla", 24), ("Edad (meses)", 9),
+    ("¿Descalificado?", 13),
     ("Razón DQ", 30), ("PoC (50%)", 10), ("Impacto (25%)", 10),
     ("Comunicación (25%)", 12), ("Nota rúbrica", 10), ("Nota final", 10),
+    ("Retroalimentación", 62),
     ("Indicio IA (1-5)", 10),
     ("Huella", 34),
     ("Flags revisión humana", 28),
     ("Estado", 16), ("Detalle estado", 30),
 ]
+GRADE_COLS = {"PoC (50%)", "Impacto (25%)", "Comunicación (25%)",
+              "Nota rúbrica", "Nota final"}
 
 DETAIL_COLS = [
     ("Archivo", 38), ("Herramienta", 24), ("Slides leídas / total", 12),
     ("Justificación PoC", 60), ("Justificación Impacto", 60),
     ("Justificación Comunicación", 60),
-    ("Feedback sugerido (borrador interno)", 60),
+    ("Retroalimentación para el estudiante", 60),
     ("Evidencia indicio IA", 50),
     ("Notas de evidencia", 60),
 ]
+
+
+def retro_text(r: dict) -> str:
+    """The paste-ready student feedback: two strengths, two to improve.
+    Review sets from before R25 carry a free-form `feedback_sugerido`."""
+    rt = r.get("retroalimentacion")
+    if isinstance(rt, dict):
+        parts = []
+        for key, title in (("fortalezas", "Fortalezas"),
+                           ("por_mejorar", "Por mejorar")):
+            items = [str(s).strip() for s in (rt.get(key) or [])
+                     if str(s or "").strip()]
+            if items:
+                parts.append(title + ":\n" + "\n".join(f"• {s}" for s in items))
+        if parts:
+            return "\n".join(parts)
+    return r.get("feedback_sugerido", "") or ""
+
+
+def ancla_text(r: dict) -> str:
+    def s(v):
+        return (" ".join(map(str, v)) if isinstance(v, list)
+                else str(v or "")).strip()
+    fa = s(r.get("fecha_ancla"))
+    if not fa:
+        return ""
+    motivo = s(r.get("ancla_motivo"))
+    return f"{fa} · {motivo}" if motivo else fa
 
 
 def normalize(r: dict) -> None:
@@ -327,12 +359,14 @@ def main() -> None:
             r.get("canvas_key", ""), r.get("tool", ""),
             r.get("declared_launch_date", ""), r.get("verified_launch_date", ""),
             r.get("verification_source", ""), r.get("verification_confidence", ""),
+            ancla_text(r) if reviewed else "",
             r.get("age_months", ""),
             ("SÍ" if dq else "NO") if reviewed else "",
             r.get("dq_reason", ""),
             s.get("poc", ""), s.get("impacto", ""), s.get("comunicacion", ""),
             r.get("_rubric") if r.get("_rubric") is not None else "",
             r["_final"] if r["_final"] is not None else "",
+            retro_text(r) if reviewed else "",
             r.get("indicio_ia", ""),
             r.get("huella", "") or "",
             ", ".join(r.get("flags", [])),
@@ -349,8 +383,12 @@ def main() -> None:
             c.border = THIN
             if fill:
                 c.fill = fill
-            if j in (14, 15, 16, 17, 18):
+            # by header, not by index: a column inserted upstream once would
+            # have silently moved the 0.00 format onto the wrong cells
+            if RANK_COLS[j - 1][0] in GRADE_COLS:
                 c.number_format = "0.00"
+            elif RANK_COLS[j - 1][0] == "Retroalimentación":
+                c.alignment = Alignment(wrap_text=True, vertical="top")
 
     ws2 = wb.create_sheet("Detalle")
     style_header(ws2, DETAIL_COLS)
@@ -360,7 +398,7 @@ def main() -> None:
             r.get("file", ""), r.get("tool", ""),
             f'{r.get("pages_read", "?")} / {r.get("pages_total", "?")}',
             j.get("poc", ""), j.get("impacto", ""), j.get("comunicacion", ""),
-            r.get("feedback_sugerido", ""),
+            retro_text(r),
             r.get("indicio_ia_evidencia", ""),
             r.get("evidence_notes", ""),
         ]
@@ -372,8 +410,12 @@ def main() -> None:
     meta = wb.create_sheet("Meta")
     meta["A1"], meta["B1"] = "Fecha de corrida", data.get("run_date", "")
     meta["A2"], meta["B2"] = "Carpeta Drive", data.get("folder_url", "")
-    meta["A3"], meta["B3"] = "Regla de corte", ("> 4 meses desde lanzamiento verificado → DESCALIFICADA; "
-                                                f"política de nota para DQ: {dq_policy_text()}; "
+    meta["A3"], meta["B3"] = "Regla de corte", ("> 4 meses entre el lanzamiento verificado y la fecha ancla → "
+                                                "DESCALIFICADA. Fecha ancla = la PRIMERA ronda en que el "
+                                                "estudiante presentó la misma herramienta (llevarla de una "
+                                                "ronda a otra es válido); si la herramienta es nueva, su fecha "
+                                                "de entrega; nunca la fecha de corrida. "
+                                                f"Política de nota para DQ: {dq_policy_text()}; "
                                                 "zona 3.5–4.5 meses lleva flag VERIFICAR FECHA")
     meta["A4"], meta["B4"] = "Ponderación", ("PoC 50% · Impacto 25% · Comunicación 25% = Nota rúbrica; "
                                              "Nota final = Nota rúbrica salvo DQ (ver Regla de corte)")
@@ -386,6 +428,9 @@ def main() -> None:
     meta["A5"], meta["B5"] = "Generado por", ("vigilancia-tech-review (revisores de IA con "
                                               "contexto limpio; revisión humana "
                                               "requerida para nota oficial)")
+    meta["A8"], meta["B8"] = "Retroalimentación", ("dos fortalezas y dos por mejorar, en frases "
+                                                   "cortas, lista para copiar al estudiante "
+                                                   "(pedido del equipo docente)")
     meta.column_dimensions["A"].width = 20
     meta.column_dimensions["B"].width = 80
 

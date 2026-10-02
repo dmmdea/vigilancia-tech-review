@@ -43,9 +43,12 @@ flowchart LR
     F --> G[Ranked Excel<br/>make_excel.py<br/>Ranking · Detalle · Meta]
 ```
 
-- **Every format is reviewed.** A `.docx`, a screenshot, or a video is a submission —
-  format is never a reason to skip or disqualify a student (the skill's hard fairness
-  rule).
+- **Every format is reviewed.** A `.docx`, a screenshot, a video or an Apple Keynote
+  `.key` is a submission — format is never a reason to skip or disqualify a student
+  (the skill's hard fairness rule).
+- **Tool age is measured at the anchor date**: the first round in which the student
+  presented that same tool (carrying a tool forward is valid), or their own
+  submission date for a new tool — never the day the grading runs.
 - **Launch dates are web-verified** against official announcements; tools older than 4
   months → automatic 1.0, with a human-flagged border band (3.5–4.5 months).
 - **Rubric:** Prueba de concepto 50% · Análisis de impacto 25% · Comunicación 25%,
@@ -73,7 +76,8 @@ flowchart LR
 - **Row states beyond graded:** `REVISADO (ANEXO)` (file read inside the
   student's integral review), `REEMPLAZADA` (older version/duplicate) — plus
   advisory columns `Indicio IA (1-5)` (unfiltered-AI signal, never part of the
-  grade) and a per-student `Feedback sugerido` draft. A `Clave` column (stable
+  grade) and per-student `Retroalimentación`: two strengths and two things to
+  improve, one short phrase each, ready to paste. A `Clave` column (stable
   Canvas student id) keys the multi-round `Histórico`, immune to display-name
   drift between rounds.
 

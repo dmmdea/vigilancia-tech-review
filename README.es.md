@@ -42,9 +42,12 @@ flowchart LR
     F --> G[Excel clasificado<br/>make_excel.py<br/>Ranking · Detalle · Meta]
 ```
 
-- **Todo formato se revisa.** Un `.docx`, una captura o un video es una entrega — el
-  formato nunca es motivo para saltarse ni descalificar a un estudiante (regla dura de
-  equidad del skill).
+- **Todo formato se revisa.** Un `.docx`, una captura, un video o un Keynote `.key`
+  es una entrega — el formato nunca es motivo para saltarse ni descalificar a un
+  estudiante (regla dura de equidad del skill).
+- **La edad de la herramienta se mide a la fecha ancla**: la primera ronda en que el
+  estudiante presentó esa misma herramienta (llevarla de una ronda a otra es válido)
+  o, si es nueva, su fecha de entrega. Nunca el día en que se corre la revisión.
 - **Las fechas de lanzamiento se verifican por web** contra anuncios oficiales;
   herramientas con más de 4 meses → 1.0 automático, con banda fronteriza (3.5–4.5
   meses) marcada para revisión humana.
@@ -74,7 +77,8 @@ flowchart LR
 - **Estados más allá de calificado:** `REVISADO (ANEXO)` (archivo leído dentro
   de la revisión integral del estudiante), `REEMPLAZADA` (versión anterior o
   duplicado) — más columnas advisory `Indicio IA (1-5)` (señal de IA sin
-  filtrar, nunca parte de la nota) y `Feedback sugerido` por estudiante. La
+  filtrar, nunca parte de la nota) y `Retroalimentación` por estudiante: dos
+  fortalezas y dos por mejorar, en frases cortas, lista para copiar. La
   columna `Clave` (id Canvas estable del estudiante) ancla el `Histórico`
   multi-ronda, inmune a variaciones del nombre visible entre rondas.
 

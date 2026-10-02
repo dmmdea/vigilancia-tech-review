@@ -27,6 +27,16 @@ same tool differ by more than one month, BOTH rows get VERIFICAR FECHA plus
 an explanatory note. Reviewers verify independently, so this is the only
 place disagreement becomes visible.
 
+FECHA ANCLA (R26, optional historial.json from build_history.py): each graded
+row's anchor is checked against the student's delivered history — an anchor
+outside the allowed dates, a round matched only by NAME, or a verified date
+more than a month away from the one that round recorded all raise
+VERIFICAR FECHA (+ REVISAR MANUALMENTE where the anchor itself is in doubt).
+A row that is valid ONLY because its age was measured from an earlier round
+gets `ancla_decisiva` — step 5bis re-checks every one of them. The date
+checker's `misma_herramienta` verdict is applied as flags; nothing here ever
+re-grades or un-disqualifies.
+
 Usage:
     python assemble_results.py <workdir> <run-date> [--folder-desc="..."]
 """
@@ -37,7 +47,9 @@ import unicodedata
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from validate_review import normalize_review  # single source of truth
+from validate_review import (normalize_review,  # single source of truth
+                             _as_date, months_between,
+                             AGE_TOL_DAY, AGE_TOL_MONTH)
 
 for _s in (sys.stdout, sys.stderr):
     if _s in (sys.__stdout__, sys.__stderr__) and hasattr(_s, "reconfigure"):
@@ -99,6 +111,8 @@ def main():
     #              "older_capability", "notes"}]}
     date_checks = (load(work, "date_checks.json", required=False)
                    or {}).get("checks", [])
+    # optional (R26): per-folder history + allowed anchors, build_history.py
+    hist = (load(work, "historial.json", required=False) or {}).get("folders", {})
     bundles = (load(work, "bundles.json", required=False) or {}).get("bundles", [])
     deck_pass = (load(work, "deck_reviews.json", required=False) or {}).get("reviewed", [])
     bundle_pass = (load(work, "bundle_reviews.json", required=False) or {}).get("reviewed", [])
@@ -466,6 +480,146 @@ def main():
                         "calificada en esta corrida — revisar ESTA versión "
                         "manualmente.")
 
+    # ---- R26: fecha ancla — check each anchor against the delivered history
+    # Carrying the same tool forward is valid, so a tool's age may be measured
+    # from the first round the student presented it. That makes the anchor
+    # itself grade-bearing: surface every way it can be wrong, decide nothing.
+    fid_of = {}
+    for e in plan["folders"]:
+        for fr in ([e["deck"]] if e.get("deck") else []) + \
+                list(e.get("deck_source_of") or []) + \
+                list(e.get("evidence") or []) + \
+                list(e.get("no_deck_files") or []) + \
+                list(e.get("superseded_files") or []):
+            if fr and fr.get("id"):
+                fid_of[fr["id"]] = e["folder_id"]
+
+    def add_flags(row, *fls):
+        for fl in fls:
+            if fl not in row["flags"]:
+                row["flags"].append(fl)
+
+    def add_note(row, text):
+        key = "evidence_notes" if row["status"] == "revisado" else "status_reason"
+        row[key] = ((row.get(key) or "") + " | " + text).strip(" |")
+
+    def same_tool_rounds(h, name, before):
+        """Earlier rounds whose recorded tool matches `name` (coarse key —
+        it only ever raises a flag for a human, never decides)."""
+        key = norm_tool(name)
+        return [r for r in h.get("rondas") or []
+                if key and norm_tool(r.get("herramienta")) == key
+                and r.get("fecha", "") < before]
+
+    n_decisive = 0
+    for row in results:
+        h = hist.get(fid_of.get(row.get("id"))) if hist else None
+        if row["status"] != "revisado" or not h:
+            continue
+        row["fecha_entrega"] = h.get("fecha_entrega")
+        launch, _prec = _as_date(row.get("verified_launch_date"))
+        entrega, _ = _as_date(h.get("fecha_entrega"))
+        if launch and entrega:
+            row["edad_a_entrega"] = round(months_between(launch, entrega), 1)
+        fa = str(row.get("fecha_ancla") or "").strip()
+        if not fa:
+            # historial.json exists, so this run is anchor-aware: a graded
+            # row without an anchor was measured from an unknown date
+            add_flags(row, "VERIFICAR FECHA", "REVISAR MANUALMENTE")
+            add_note(row, "La revisión no declaró fecha ancla: no se sabe "
+                          "desde qué fecha se midió la edad de la herramienta.")
+            continue
+        allowed = h.get("anclas_permitidas") or []
+        if fa not in allowed:
+            add_flags(row, "VERIFICAR FECHA", "REVISAR MANUALMENTE")
+            add_note(row, f"Fecha ancla {fa} fuera de las permitidas para este "
+                          f"estudiante ({', '.join(allowed)}).")
+        anchor, _ = _as_date(fa)
+        age = row.get("age_months")
+        conf_ok = row.get("verification_confidence") in ("alta", "media")
+        # the validator's anchor arithmetic again (defense in depth: a stale
+        # or hand-edited review never passed the per-review gate)
+        if anchor and launch and conf_ok:
+            later = ((launch.year, launch.month) > (anchor.year, anchor.month)
+                     if _prec == "mes" else launch > anchor)
+            if later:
+                add_flags(row, "VERIFICAR FECHA", "REVISAR MANUALMENTE")
+                add_note(row, f"La fecha verificada {row.get('verified_launch_date')} "
+                              f"es posterior a la fecha ancla {fa}: no puede ser "
+                              "lo que el estudiante presentó en esa ronda.")
+        if (anchor and launch and conf_ok and isinstance(age, (int, float))
+                and not isinstance(age, bool)):
+            recomputed = months_between(launch, anchor)
+            row["edad_recalculada"] = round(recomputed, 2)
+            tol = AGE_TOL_DAY if _prec == "dia" else AGE_TOL_MONTH
+            if abs(age - recomputed) > tol:
+                add_flags(row, "VERIFICAR FECHA")
+                add_note(row, f"Edad reportada {age} vs calculada desde la "
+                              f"fecha ancla {fa}: {recomputed:.2f} meses.")
+            if (age > 4.0) != (recomputed > 4.0):
+                add_flags(row, "VERIFICAR FECHA", "REVISAR MANUALMENTE")
+                add_note(row, f"Edad reportada {age} vs calculada desde la "
+                              f"fecha ancla {fa}: {recomputed:.2f} meses — "
+                              "quedan a lados distintos del corte de 4.0.")
+            if (row.get("disqualified") and recomputed <= 4.0
+                    and "general" not in str(row.get("dq_reason") or "").lower()):
+                add_flags(row, "VERIFICAR FECHA", "REVISAR MANUALMENTE")
+                add_note(row, f"Descalificada, pero desde la fecha ancla {fa} "
+                              f"la herramienta tiene {recomputed:.1f} meses "
+                              "(≤ 4.0): la DESCALIFICACIÓN puede ser "
+                              "INCORRECTA; decisión humana requerida.")
+        # "the FIRST round": an earlier round already shows the same tool
+        tool_now = row.get("tool") if fa == h.get("fecha_entrega") else None
+        rr0 = next((r for r in h.get("rondas") or [] if r.get("fecha") == fa),
+                   None)
+        earlier = same_tool_rounds(h, tool_now or (rr0 or {}).get("herramienta"),
+                                   fa)
+        if earlier and (rr0 is not None or row.get("disqualified")):
+            first = earlier[0]
+            fdate, _ = _as_date(first.get("fecha"))
+            edad_first = (round(months_between(launch, fdate), 1)
+                          if launch and fdate else None)
+            add_flags(row, "VERIFICAR FECHA", "REVISAR MANUALMENTE")
+            add_note(row, f"La misma herramienta parece estar ya en "
+                          f"{first['ronda']} ({first['fecha']}: "
+                          f"«{first.get('herramienta')}»): la edad se mediría "
+                          "desde esa primera ronda"
+                          + (f", donde tendría {edad_first} meses"
+                             if edad_first is not None else "")
+                          + (". La DESCALIFICACIÓN puede ser INCORRECTA"
+                             if row.get("disqualified") and edad_first is not None
+                             and edad_first <= 4.0 else "") + ".")
+        rr = rr0
+        if fa == h.get("fecha_entrega") or rr is None:
+            continue
+        row["herramienta_ronda_ancla"] = f"{rr['ronda']}: {rr['herramienta']}"
+        if rr.get("coincidencia") == "nombre":
+            add_flags(row, "VERIFICAR FECHA", "REVISAR MANUALMENTE")
+            add_note(row, f"La edad se midió desde {rr['ronda']}, pero esa "
+                          "ronda se asoció a este estudiante SOLO por el "
+                          "nombre (sin código): confirmar que es la misma "
+                          "persona antes de aceptar el ancla.")
+        prev, _ = _as_date(rr.get("fecha_verificada"))
+        if prev and launch and abs(months_between(prev, launch)) > 1.0:
+            add_flags(row, "VERIFICAR FECHA")
+            add_note(row, f"La fecha verificada ahora "
+                          f"({row.get('verified_launch_date')}) difiere en más "
+                          f"de un mes de la verificada en {rr['ronda']} "
+                          f"({rr.get('fecha_verificada')}): confirmar que es "
+                          "la misma herramienta que presentó entonces.")
+        edad_e, age = row.get("edad_a_entrega"), row.get("age_months")
+        if (isinstance(edad_e, (int, float)) and edad_e > 4.0
+                and isinstance(age, (int, float)) and age <= 4.0):
+            row["ancla_decisiva"] = True
+            n_decisive += 1
+            add_note(row, f"Válida por la regla de la misma herramienta: "
+                          f"medida a su fecha de entrega ({h['fecha_entrega']}) "
+                          f"tendría {edad_e} meses; desde {rr['ronda']} tiene "
+                          f"{age}.")
+    if hist:
+        print(f"fecha ancla: {n_decisive} fila(s) válidas solo por la regla de "
+              "la misma herramienta (ancla_decisiva — van todas a 5bis)")
+
     # ---- R19: apply adversarial date-check verdicts as FLAGS --------------
     # The checker can prove a capability is older than the accepted date; the
     # pipeline surfaces that loudly but never silently re-grades or DQs —
@@ -588,6 +742,55 @@ def main():
                 row[key] = ((row.get(key) or "") + " | Verificación adversarial "
                             "de fecha NO concluyente: "
                             + (c.get("notes") or "")).strip(" |")
+            # R26: is today's capability really the one of the anchor round?
+            mh = _norm_verdict(c.get("misma_herramienta"))
+            edad_e = row.get("edad_a_entrega")
+            c_notes = c.get("notes")
+            c_notes = (" ".join(map(str, c_notes)) if isinstance(c_notes, list)
+                       else str(c_notes or ""))
+            if mh in ("no", "no_concluyente") and row.get("herramienta_ronda_ancla"):
+                add_flags(row, "VERIFICAR FECHA",
+                          *(("REVISAR MANUALMENTE",) if mh == "no" else ()))
+                fuera = (isinstance(edad_e, (int, float)) and edad_e > 4.0)
+                add_note(row, "VERIFICACIÓN DE ANCLA: "
+                         + ("NO es la misma herramienta" if mh == "no"
+                            else "no se pudo confirmar que sea la misma "
+                                 "herramienta")
+                         + f" que en «{row['herramienta_ronda_ancla']}». "
+                         + (f"Medida a la fecha de entrega tendría {edad_e} "
+                            "meses: la fila podría quedar por FUERA de la "
+                            "ventana; decisión humana requerida. "
+                            if fuera else "")
+                         + c_notes)
+            elif mh == "si" and str(c.get("ronda_misma_herramienta") or "").strip():
+                # the reverse error: the age was measured from a date LATER
+                # than the first round with this tool (the submission date,
+                # or a later round) — a DQ there may be the calendar's doing
+                rs = str(c.get("ronda_misma_herramienta")).strip()
+                hh = hist.get(fid_of.get(row.get("id"))) if hist else None
+                rr = next((r for r in (hh or {}).get("rondas") or []
+                           if r.get("ronda") == rs), None)
+                launch, _ = _as_date(row.get("verified_launch_date"))
+                then, _ = _as_date(rr.get("fecha")) if rr else (None, None)
+                now_anchor = str(row.get("fecha_ancla") or "")
+                if rr is None or (now_anchor and rr.get("fecha", "") >= now_anchor):
+                    if rr is None:
+                        add_flags(row, "VERIFICAR FECHA")
+                        add_note(row, "VERIFICACIÓN DE ANCLA: el verificador "
+                                 f"nombra la ronda «{rs}», que no está en el "
+                                 "historial de este estudiante. " + c_notes)
+                    continue
+                edad_r = (round(months_between(launch, then), 1)
+                          if launch and then else None)
+                add_flags(row, "VERIFICAR FECHA", "REVISAR MANUALMENTE")
+                add_note(row, "VERIFICACIÓN DE ANCLA: el verificador ve la "
+                         f"MISMA herramienta desde {rs} ({rr['fecha']})"
+                         + (f", donde tendría {edad_r} meses"
+                            if edad_r is not None else "")
+                         + (". La DESCALIFICACIÓN puede ser INCORRECTA (llevar "
+                            "la misma herramienta es válido)"
+                            if row.get("disqualified") else "")
+                         + "; decisión humana requerida. " + c_notes)
     if date_checks:
         print(f"date_checks: {len(date_checks)} recibidos, {len(applied_ids)} "
               f"aplicados ({len(older_ids)} con evidencia de fecha más vieja, "

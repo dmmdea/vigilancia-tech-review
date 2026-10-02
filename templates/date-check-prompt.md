@@ -2,10 +2,13 @@
 
 Se despacha DESPUÉS del ensamblaje y ANTES de generar el Excel, sobre:
 **todo el top-N (mínimo top-8)**, toda fila con `age_months` entre 2.5 y 4.5,
-toda fila cuyas notas mencionen otra versión o función anterior, **y toda fila
+toda fila cuyas notas mencionen otra versión o función anterior, **toda fila
 DESCALIFICADA** (modo bidireccional, abajo — en la primera ronda el equipo
 docente revirtió 5 de 11 descalificaciones: fechas borderline y funciones
-nuevas fechadas con la familia vieja del producto). Un
+nuevas fechadas con la familia vieja del producto), **y toda fila con
+`ancla_decisiva`** (la edad se midió desde una ronda anterior y, medida a la
+fecha de entrega, pasaría de 4.0 meses: ahí la validez depende de que sea de
+verdad la misma herramienta). Un
 verificador de contexto limpio POR FILA, con búsqueda web. El orquestador
 escribe los veredictos en `<work>/date_checks.json` (formato abajo) y
 re-ejecuta `assemble_results.py`, que los aplica como flags — nunca cambia
@@ -22,7 +25,10 @@ intentar DEMOSTRAR que la herramienta/función de esta fila es MÁS VIEJA de lo
 que la revisión aceptó. No calificas nada; solo fechas.
 
 **Herramienta/función aceptada por la revisión:** {{tool}}
-**Fecha verificada aceptada:** {{verified_launch_date}} (edad {{age_months}} meses al {{run_date}})
+**Fecha verificada aceptada:** {{verified_launch_date}} (edad {{age_months}} meses a la fecha ancla {{fecha_ancla}}, «{{ancla_motivo}}»; a la fecha de entrega {{fecha_entrega}} serían {{edad_a_entrega}} meses)
+**Lo que el estudiante presentó en la ronda del ancla:** {{herramienta_ronda_ancla}}
+**Rondas anteriores del estudiante:**
+{{historial_block}}
 **¿Fila descalificada por la revisión?** {{disqualified}}
 **Lo que la PoV demuestra según la revisión:** {{capability_summary}}
 **Notas de la revisión:** {{evidence_notes_excerpt}}
@@ -46,6 +52,22 @@ que la revisión aceptó. No calificas nada; solo fechas.
    dentro de la ventana de 4 meses, el veredicto es "mas_nueva". Si la evidencia
    apunta en ambas direcciones, elige la que tenga la fuente oficial más firme y
    explica la otra en `notes`.
+5. **Ancla en una ronda anterior.** Llevar la misma herramienta de una ronda a
+   otra es válido, así que la edad puede medirse desde la primera ronda en que
+   el estudiante la presentó. Si `ancla_motivo` dice "misma herramienta desde
+   …", decide si lo que la PoV demuestra HOY es la misma capacidad que
+   presentó en esa ronda (dato de arriba): `misma_herramienta` = "si" (la misma
+   capacidad, aunque el caso haya mejorado), "no" (cambió de herramienta o de
+   capacidad: entonces la edad se mide a la fecha de entrega) o
+   "no_concluyente".
+   Además, la edad se mide desde la PRIMERA ronda con la misma capacidad. Si
+   el estudiante ya la presentó en una ronda ANTERIOR a la del ancla (o el
+   ancla es la fecha de entrega y la capacidad aparece en la lista de
+   arriba), la edad pudo medirse mal y, en una fila descalificada, la
+   descalificación también. Responde `misma_herramienta: "si"` y pon en
+   `ronda_misma_herramienta` esa PRIMERA ronda, escrita tal cual aparece en la
+   lista.
+   Si nada de esto aplica, "no_aplica".
 
 ## Devuelve SOLO este JSON
 ```json
@@ -58,6 +80,8 @@ que la revisión aceptó. No calificas nada; solo fechas.
   "newer_date": "",
   "newer_evidence_url": "",
   "newer_capability": "",
+  "misma_herramienta": "si | no | no_concluyente | no_aplica",
+  "ronda_misma_herramienta": "",
   "notes": ""
 }
 ```
@@ -69,3 +93,5 @@ que la revisión aceptó. No calificas nada; solo fechas.
   función concreta que el estudiante usó y su anuncio.
 - `verdict: "no_concluyente"` cuando hay indicios sin evidencia firme —
   explica en `notes`.
+- `misma_herramienta: "no"` exige explicar en `notes` qué cambió entre la
+  ronda del ancla y esta entrega.

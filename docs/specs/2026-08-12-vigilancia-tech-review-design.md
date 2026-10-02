@@ -35,6 +35,9 @@ are invalid unless the subject is a *specific recently launched feature*.
 2. **Recency check = web-verified.** Each sub-agent web-searches the tool's real launch
    date (official announcement, changelog, credible press) and cites the source. The
    verified date governs. Cutoff: **>4 months** older than the run date → DQ (1.0).
+   *(Superseded 2026-10-01, R26: the age is measured at the anchor date — the first
+   round in which the student presented the tool, else the submission date — never
+   the run date. See the v2 plan, Round 4.)*
    Inconclusive verification or gray zone (3–4 months) → **no auto-DQ**; row flagged
    `VERIFICAR FECHA` for human decision.
 3. **Scale = Colombian 1.0–5.0** per criterion; final = weighted 50/25/25; DQ = 1.0 flat.

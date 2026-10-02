@@ -8,6 +8,12 @@ all — never to "simplify" something Read already handles.
 
   .pdf                -> as-is                        (vision)
   .pptx .ppt .odp     -> PowerPoint/LibreOffice -> PDF (vision)
+  .key (Apple Keynote) -> rebuilt slide by slide by keynote_extract.py: the
+                         text of every slide + its thumbnail + the images
+                         placed on it at full resolution; embedded movies go
+                         through the video path below. Neither PowerPoint nor
+                         a stock LibreOffice opens modern .key files, and a
+                         deck is a deck: format never skips a student.
   .docx .doc .rtf     -> Word/LibreOffice -> PDF       (vision; KEEPS the
                          screenshots students embed as their PoC evidence —
                          text extraction would silently drop exactly the
@@ -93,8 +99,35 @@ TEXT_EXT = {".py", ".txt", ".md", ".json", ".log", ".sql", ".js", ".ts", ".csv"}
 DOC_EXT = {".docx", ".doc", ".rtf", ".odt"}
 HTML_EXT = {".html", ".htm"}
 SLIDE_EXT = {".pptx", ".ppt", ".odp"}
+KEYNOTE_EXT = {".key"}
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+import keynote_extract  # noqa: E402  (sibling modules, stdlib only)
+import pptx_extract  # noqa: E402
+
+# Operating-system furniture inside zips, never student work: macOS
+# AppleDouble twins (__MACOSX/, "._name") and folder metadata. Treating them
+# as material turned one real zip into a dozen fake "unreadable" items and a
+# 4 KB fake video, and pushed real files past the 40-file cap.
+ZIP_JUNK_NAMES = {".ds_store", "thumbs.db", "desktop.ini"}
+HTML_TEXT_CAP = 200_000    # chars of page source handed over when no render
+
+
+def is_zip_junk(relpath: str) -> bool:
+    parts = relpath.replace("\\", "/").split("/")
+    base = parts[-1]
+    return ("__MACOSX" in parts or base.startswith("._")
+            or base.lower() in ZIP_JUNK_NAMES)
+
+
+def rebuilt_item(name, deck, origin):
+    """One reviewable item for a deck rebuilt slide by slide."""
+    return {"kind": "deck_rebuilt", "origin": origin, "label": name,
+            "slides": deck["slides"],
+            "loose_images": deck.get("loose_images") or [],
+            "text_path": deck["text_path"],
+            "order_exact": deck["order_exact"], "note": deck["note"]}
 
 
 def longpath(p: str) -> str:
@@ -213,6 +246,8 @@ def doc_to_pdf(src, dst):
 def html_to_pdf(src, dst):
     if not CHROME:
         return soffice_convert(src, dst)
+    if os.path.exists(dst):
+        os.remove(dst)     # never accept an artifact left by an earlier run
     try:
         subprocess.run(
             [CHROME, "--headless", "--disable-gpu", "--no-sandbox",
@@ -224,6 +259,27 @@ def html_to_pdf(src, dst):
     except (subprocess.TimeoutExpired, OSError) as e:
         return False, str(e)[:200]
     return (True, "") if os.path.exists(dst) else (False, "Chrome no produjo PDF")
+
+
+def html_screenshot(src, dst_png):
+    """Second chance for pages print-to-PDF chokes on (heavy WebGL/3D
+    scenes): one rendered viewport is still the student's artifact."""
+    if not CHROME:
+        return False, "Chrome no disponible"
+    if os.path.exists(dst_png):
+        os.remove(dst_png)  # a stale capture must not pass as this run's
+    try:
+        r = subprocess.run(
+            [CHROME, "--headless", "--no-sandbox", "--hide-scrollbars",
+             "--window-size=1600,1000", "--virtual-time-budget=8000",
+             f"--screenshot={os.path.abspath(dst_png)}",
+             "file:///" + os.path.abspath(src).replace("\\", "/")],
+            capture_output=True, text=True, errors="replace", timeout=150)
+    except (subprocess.TimeoutExpired, OSError) as e:
+        return False, str(e)[:200]
+    ok = (r.returncode == 0 and os.path.exists(dst_png)
+          and os.path.getsize(dst_png) > 0)
+    return (True, "") if ok else (False, "Chrome no produjo captura")
 
 
 def slides_to_pdf(src, dst):
@@ -387,7 +443,42 @@ def process_file(fr, folder_id, items, matroot, prefix=""):
             local = stage(src, os.path.join(base, f"{tag}_src{ext}"))
             dst = os.path.join(base, f"{tag}.pdf")
             good, err = slides_to_pdf(local, dst)
-            ok_pdf(dst) if good else fail(f"conversión de diapositivas falló: {err}")
+            if good:
+                ok_pdf(dst)
+            elif ext == ".pptx":
+                # a valid package no renderer will open (real final-round
+                # cases): rebuild it slide by slide instead of losing it
+                try:
+                    deck = pptx_extract.extract(
+                        longpath(local), os.path.join(base, f"{tag}_pptx"),
+                        ffmpeg=FFMPEG)
+                except Exception as e2:
+                    fail(f"conversión de diapositivas falló: {err} | "
+                         f"lectura directa del .pptx también falló: {e2}")
+                    return
+                deck["note"] += f" | error del renderizador: {err[:160]}"
+                items.append(rebuilt_item(name, deck, "pptx"))
+            else:
+                fail(f"conversión de diapositivas falló: {err}")
+        elif ext in KEYNOTE_EXT:
+            local = stage(src, os.path.join(base, f"{tag}_src.key"))
+            kdir = os.path.join(base, f"{tag}_key")
+            try:
+                deck = keynote_extract.extract(longpath(local), kdir,
+                                               ffmpeg=FFMPEG)
+            except Exception as e:
+                fail(f"Keynote ilegible ({e}) — revisar manualmente")
+                return
+            items.append(rebuilt_item(name, deck, "keynote"))
+            # movies placed on the slides (typically the tool's own output):
+            # same keyframes(+transcript) path as any submitted video
+            for mv in deck["movies"]:
+                where = (f"lámina {mv['slide']}" if mv.get("slide")
+                         else "sin lámina identificada")
+                process_file({"name": f"{name} :: {mv['name']} ({where})",
+                              "ext": os.path.splitext(mv["path"])[1].lower(),
+                              "path": mv["path"]},
+                             folder_id, items, matroot, prefix="k")
         elif ext in DOC_EXT:
             local = stage(src, os.path.join(base, f"{tag}_src{ext}"))
             dst = os.path.join(base, f"{tag}.pdf")
@@ -398,8 +489,38 @@ def process_file(fr, folder_id, items, matroot, prefix=""):
             local = stage(src, os.path.join(base, f"{tag}_src.html"))
             dst = os.path.join(base, f"{tag}.pdf")
             good, err = html_to_pdf(local, dst)
-            (ok_pdf(dst, "página HTML renderizada en navegador")
-             if good else fail(f"render HTML falló: {err}"))
+            if good:
+                ok_pdf(dst, "página HTML renderizada en navegador")
+                return
+            png = os.path.join(base, f"{tag}_captura.png")
+            good2, err2 = html_screenshot(local, png)
+            if good2:
+                items.append({"kind": "image", "path": os.path.abspath(png),
+                              "label": name,
+                              "note": "página HTML pesada (p. ej. escena 3D): "
+                                      "el PDF falló, esta es UNA captura de "
+                                      "la vista inicial — no la castigues "
+                                      f"por lo que no se ve | {err[:120]}"})
+                return
+            # last resort: the page source IS the artifact — hand it over
+            try:
+                with open(longpath(local), encoding="utf-8",
+                          errors="replace") as f:
+                    text = f.read()
+            except OSError as e3:
+                fail(f"render HTML falló: {err} | captura: {err2} | "
+                     f"lectura: {e3}")
+                return
+            tdst = os.path.join(base, f"{tag}_fuente.txt")
+            with open(tdst, "w", encoding="utf-8") as f:
+                f.write(text[:HTML_TEXT_CAP])
+            items.append({"kind": "text", "path": os.path.abspath(tdst),
+                          "label": name,
+                          "note": "no se pudo renderizar la página: se "
+                                  "entrega su CÓDIGO fuente"
+                                  + (f" (primeros {HTML_TEXT_CAP} caracteres "
+                                     f"de {len(text)})"
+                                     if len(text) > HTML_TEXT_CAP else "")})
         elif ext in IMAGE_EXT:
             dst = stage(src, os.path.join(base, f"{tag}{ext}"))
             items.append({"kind": "image", "path": os.path.abspath(dst),
@@ -469,7 +590,9 @@ def process_file(fr, folder_id, items, matroot, prefix=""):
                 fail(f"no se pudo descomprimir: {e}")
                 return
             inner = [os.path.join(r, fn)
-                     for r, _d, fs in os.walk(xdir) for fn in sorted(fs)]
+                     for r, _d, fs in os.walk(xdir) for fn in sorted(fs)
+                     if not is_zip_junk(os.path.relpath(os.path.join(r, fn),
+                                                        xdir))]
             for p in inner[:40]:
                 process_file({"name": f"{name} :: {os.path.relpath(p, xdir)}",
                               "ext": os.path.splitext(p)[1].lower(), "path": p},
@@ -479,7 +602,28 @@ def process_file(fr, folder_id, items, matroot, prefix=""):
                               "note": f"zip con {len(inner)} archivos; solo se "
                                       "procesaron los primeros 40 — revisar el resto"})
         else:
-            fail(f"extensión no reconocida ({ext}) — revisar manualmente")
+            # no/unknown extension but plain text (a real zip carried the
+            # student's notes, with the tool's launch evidence, as "Notas")
+            try:
+                with open(longpath(src), "rb") as f:
+                    head = f.read(1_000_000)
+                # a full window may end mid-character: drop the tail bytes
+                text = (head[:-4] if len(head) == 1_000_000 else head).decode("utf-8")
+                printable = sum(ch.isprintable() or ch in "\r\n\t"
+                                for ch in text)
+                is_text = bool(text.strip()) and printable >= 0.95 * len(text)
+            except (OSError, UnicodeDecodeError):
+                is_text = False
+            if is_text:
+                # the head only DETECTS; the whole file is the material
+                dst = os.path.join(base, f"{tag}_texto.txt")
+                shutil.copyfile(longpath(src), dst)
+                items.append({"kind": "text", "path": os.path.abspath(dst),
+                              "label": name,
+                              "note": "archivo sin extensión reconocida; su "
+                                      "contenido es texto"})
+            else:
+                fail(f"extensión no reconocida ({ext}) — revisar manualmente")
     except Exception as e:
         fail(f"fallo procesando: {e}")
 

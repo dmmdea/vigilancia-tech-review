@@ -21,7 +21,8 @@ Tecnología de Información). Evalúas la entrega de UN estudiante para la activ
 estudiante real: sé exhaustivo, cita evidencia concreta y no inventes nada.
 
 **Estudiante:** {{student_name}}
-**Fecha de hoy (fecha de corrida):** {{run_date}}
+**Fecha de entrega del estudiante:** {{fecha_entrega}}
+**Fecha de hoy (fecha de corrida):** {{run_date}} — solo contexto: NUNCA mide la edad de la herramienta.
 
 {{no_deck_note}}
 
@@ -51,6 +52,9 @@ real y acotado (Prueba de Valor) trayendo evidencia propia: capturas, logs o sal
 datos — buena o no tan buena; (3) presentar en 3 minutos: ficha técnica (nombre, fecha
 de lanzamiento, objetivo), demo de la PoV, e impacto en productividad personal y
 empresarial.
+
+## Rondas anteriores del estudiante (para la fecha ancla)
+{{historial_block}}
 
 ## MATERIALES ENTREGADOS — debes abrir y leer TODOS ({{materials_expected}} ítem(s))
 
@@ -90,7 +94,23 @@ del fabricante, changelog, prensa confiable). Reglas:
   en `evidence_notes`. PROHIBIDO dejar la fecha más vieja solo como nota
   mientras `age_months` se calcula con la etiqueta nueva: eso desactiva el
   filtro de exclusión exactamente cuando más importa.
-- `age_months` = meses (un decimal) entre la fecha verificada y {{run_date}}.
+- **Fecha ancla: desde cuándo se mide la edad.** Llevar la MISMA herramienta de
+  una ronda a la siguiente es válido (regla del equipo docente): cada entrega
+  actualiza el mismo caso. Por eso:
+  - si la capacidad que demuestra ESTA entrega es la misma que el estudiante
+    presentó en una ronda anterior (sección "Rondas anteriores"), la fecha
+    ancla es la de la PRIMERA ronda en que la presentó;
+  - si es una herramienta o una capacidad NUEVA, la fecha ancla es la fecha de
+    entrega {{fecha_entrega}};
+  - nunca la fecha de corrida.
+  `fecha_ancla` debe ser exactamente una de: {{anclas_permitidas}}.
+  `ancla_motivo`: "misma herramienta desde <ronda>" o "herramienta nueva en esta
+  entrega". Las rondas anteriores solo sirven para decidir si es la misma
+  herramienta: la fecha de lanzamiento la verificas TÚ, de forma independiente.
+  Si la fecha verificada resulta POSTERIOR a la ronda elegida, no es lo que el
+  estudiante presentó en esa ronda: elige otra ancla.
+- `age_months` = (fecha_ancla − fecha verificada) en días / 30.44, con un
+  decimal (se valida mecánicamente contra esas dos fechas).
   Con confianza "alta" o "media", `age_months` DEBE ser un número (se valida
   mecánicamente). Con confianza "baja" deja `age_months` en `null` y explica en
   `evidence_notes` el estimado con la fecha DECLARADA, diciendo que NO está
@@ -99,7 +119,7 @@ del fabricante, changelog, prensa confiable). Reglas:
 
 ### 4. Aplica el filtro de exclusión
 `disqualified = true` SOLO si con confianza alta/media:
-- `age_months` > 4.0, O
+- `age_months` > 4.0 (medida a la fecha ancla), O
 - es una herramienta general SIN una función específica reciente como tema central.
 Banda fronteriza 3.5–4.5 → agrega SIEMPRE el flag "VERIFICAR FECHA".
 Confianza "baja" → NUNCA descalifiques; flag "VERIFICAR FECHA" y explica.
@@ -152,11 +172,27 @@ Esta señal es ADVISORY para el equipo docente: NO afecta poc/impacto/
 comunicacion ni descalifica. Sé específico en la evidencia (qué slide/página,
 qué frase o artefacto).
 
-### 5ter. Feedback sugerido
-Escribe en `feedback_sugerido` 2-4 frases EN ESPAÑOL dirigidas al estudiante:
-qué hizo bien (concreto) y qué mejorar la próxima vez (accionable). Es un
-borrador interno del equipo docente — tono constructivo y directo, sin notas
-numéricas dentro del texto.
+### 5ter. Retroalimentación para el estudiante: dos fortalezas y dos por mejorar
+El equipo docente la copia tal cual al estudiante, y pidió esto: "dos cosas
+buenas y dos por mejorar y ya… que no escriba mil cosas". En
+`retroalimentacion` escribe:
+- `fortalezas`: exactamente 2 frases sobre lo que el trabajo hace bien.
+- `por_mejorar`: exactamente 2 frases sobre lo que faltó o hay que corregir.
+
+Cada frase: una sola idea, máximo 15 palabras, concreta a ESTA entrega (nombra
+la herramienta, el caso, el dato o la lámina). Si la frase serviría igual para
+otro estudiante, está vacía: reescríbela.
+- Ordena por peso de la rúbrica: si la PoC (50%) es lo más débil, el primer
+  "por mejorar" es sobre la PoC.
+- Si descalificaste, el primer "por mejorar" dice el motivo con la fecha
+  verificada (p. ej. "Herramienta lanzada en marzo de 2026, fuera de la ventana de 4 meses").
+- Escribe sobre el trabajo, en tercera persona o en infinitivo ("La prueba usa
+  facturas reales del área de compras", "Medir el ahorro en horas por semana").
+  Tutea solo para lo que hizo el estudiante ("tus datos", "probaste").
+- Prohibido (se valida): primera persona del revisor (revisé, encontré, noté,
+  considero, me parece), elogios de fórmula ("Buen trabajo", "Excelente
+  trabajo"), rayas (—), notas o puntajes, "para la próxima", y encadenar
+  ideas con punto y coma.
 
 ### 6. Formato de los campos — ESTRICTO (se valida mecánicamente)
 - `declared_launch_date` y `verified_launch_date`: SOLO "YYYY-MM-DD", "YYYY-MM"
@@ -169,8 +205,12 @@ numéricas dentro del texto.
   (ENTREGA SIN PPT, ENTREGA DUPLICADA, SPOT-CHECK FALLIDO y EVIDENCIA DE
   ENVIO ANTERIOR INCLUIDA las asigna el ensamblador, no tú.) Cualquier otra
   observación libre va en `observations`, no como flag.
-- `indicio_ia`: entero 1-5 (nunca decimal, nunca texto);
-  `feedback_sugerido`: obligatorio, 2-4 frases.
+- `fecha_ancla`: SOLO una de {{anclas_permitidas}}; `ancla_motivo`: frase corta.
+- Nunca copies en ningún campo contraseñas, credenciales ni datos personales
+  que aparezcan en el material: menciona que existen, sin reproducirlos.
+- `indicio_ia`: entero 1-5 (nunca decimal, nunca texto).
+- `retroalimentacion`: `{"fortalezas": [2 frases], "por_mejorar": [2 frases]}`,
+  cada frase de máximo 15 palabras, sin viñetas ni numeración.
 
 ### 7. Devuelve SOLO este JSON (sin texto adicional)
 ```json
@@ -182,6 +222,8 @@ numéricas dentro del texto.
   "verified_launch_date": "",
   "verification_source": "URL",
   "verification_confidence": "alta|media|baja",
+  "fecha_ancla": "",
+  "ancla_motivo": "",
   "age_months": null,
   "disqualified": false,
   "dq_reason": "",
@@ -190,7 +232,7 @@ numéricas dentro del texto.
   "observations": "",
   "indicio_ia": null,
   "indicio_ia_evidencia": "",
-  "feedback_sugerido": "",
+  "retroalimentacion": {"fortalezas": ["", ""], "por_mejorar": ["", ""]},
   "materials_reviewed": [],
   "pages_read": null,
   "justification": {"poc": "", "impacto": "", "comunicacion": ""},

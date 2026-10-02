@@ -10,8 +10,13 @@ IA de vanguardia** and delivers a ranked Excel for the human TAs. The skill neve
 the official grade — it produces evidence-cited candidate scores and a top-5 shortlist.
 
 **Rubric:** Prueba de concepto 50% · Análisis de impacto 25% · Comunicación 25%.
-Exclusion filter: tool launched **more than 4 months** before the run date → DESCALIFICADA
-(verified by web search, not by trusting the deck). **DQ grade policy** (TA-team
+Exclusion filter: tool launched **more than 4 months** before the **anchor date**
+(`fecha ancla`) → DESCALIFICADA (verified by web search, not by trusting the deck).
+The anchor is the FIRST round in which the student presented that same tool —
+carrying a tool forward is valid, each submission updates the same case (teaching
+team, 2026-10-01) — or, for a tool new in this submission, the student's own
+submission date. **Never the run date**: grading days after the deadline must not
+disqualify anyone for the calendar. **DQ grade policy** (TA-team
 calibration, 2026-08-21): a disqualified row keeps its rubric grade visible (`Nota
 rúbrica`) and its `Nota final` is **capped at 3.0** by default — `--dq-policy=cap:3.0`
 in step 6; `fixed:N`, `rubric` (no penalty) and `legacy` (automatic 1.0) are available
@@ -138,6 +143,31 @@ no download form" failures = throttling, stop too.
 folder (flat shape) — the rest of the pipeline (steps 2–6) consumes its
 `review_plan.json` exactly as in the local-folder path.
 
+### 1bis. History of earlier rounds → allowed anchor dates
+
+```bash
+python "$SKILL_DIR/scripts/build_history.py" "$WORK" \
+    --master="<delivery>/Resultados-…-MAESTRO….xlsx" [--master=…] \
+    [--round-date="Semana N=YYYY-MM-DD"]
+```
+
+Reads every `Ranking - <ronda>` sheet of the delivered masters and writes
+`historial.json`: per folder, the student's submission date (Canvas
+timestamp), the earlier rounds with the tool presented in each, the allowed
+`anclas_permitidas`, and a ready `historial_block` for the reviewer prompt.
+Matching is by `Clave`; a round without `Clave` matches by EXACT normalized
+name only and is labelled so (the assembler flags any anchor that rests on
+it). A round with no `Meta - <ronda>` sheet needs `--round-date` — the script
+refuses to guess (TAs rename sheets: one delivered master carried the week-4
+ranking next to a meta sheet still named for week 3). A round's date must be
+its SUBMISSION deadline: the `Meta` fallback is that round's grading date,
+which is the same only when the round was graded on the deadline day — the
+print-out says which source each date came from; correct any that differ with
+`--round-date`. It also lists every student matched only by name or with no
+history. First round of a course: pass no `--master` and every anchor is the
+submission date. A Drive-link run has no Canvas timestamps: pass
+`--fecha-entrega-defecto=<deadline>`.
+
 ### 2. Make every file readable — whatever its format
 
 ```bash
@@ -150,9 +180,10 @@ where the harness's file tool cannot open the format (never "convert" a PNG):
 | Submitted | Becomes | Why |
 |---|---|---|
 | `.pdf` | as-is | vision (rasterize per adapter if needed) |
-| `.pptx .ppt .odp` | PDF | slide decks aren't readable directly |
+| `.pptx .ppt .odp` | PDF (LibreOffice → PowerPoint); a valid `.pptx` neither opens → rebuilt slide by slide (`pptx_extract.py`: text, notes, charts as data, images) | slide decks aren't readable directly; a renderer refusal is never the student's fault |
+| `.key` (Apple Keynote) | per slide: text + thumbnail + full-size images; embedded movies → keyframes | neither PowerPoint nor a stock LibreOffice opens modern `.key`; `keynote_extract.py` reads it with the standard library, in presentation order |
 | `.docx .doc .rtf` | PDF (Word COM → LibreOffice) | keeps embedded screenshots = the PoC evidence |
-| `.html .htm` | PDF (headless Chrome) | keeps the rendering |
+| `.html .htm` | PDF (headless Chrome) → screenshot → page source | keeps the rendering; heavy 3D pages time out in print-to-PDF |
 | `.png .jpg …` | passthrough | vision reads images directly |
 | `.xlsx .xls .csv` | `.txt` cell dump | data reads better as data |
 | `.mp4 .mov …` | keyframes (+ transcript) | the reviewer's own vision judges the frames |
@@ -162,7 +193,7 @@ Every submitted file also gets a content fingerprint (`huella`), carried into
 the Excel's `Huella` column. That is what lets a later round prove a student
 resubmitted the very same file instead of updating their case — a filename
 cannot, since students routinely keep the name and rewrite the deck.
-| `.zip` | extracted, contents re-routed | — |
+| `.zip` | extracted, contents re-routed; `__MACOSX/`, `._*`, `.DS_Store` skipped | OS furniture is not student work |
 | `.py .txt .md` | passthrough | text |
 
 Writes `materials.json`. It prints any video or audio lacking a transcript;
@@ -220,6 +251,9 @@ simple template instead.
 Templates: `templates/reviewer-prompt.md` (single deck) ·
 `templates/bundle-reviewer-prompt.md` (multi-format; feed it each bundle's
 `materials_block`). Dispatch per your platform adapter, ~4 concurrent.
+Both take, from the student's `historial.json` entry, `{{fecha_entrega}}`,
+`{{historial_block}}` and `{{anclas_permitidas}}` (the list joined with
+" · "); `{{run_date}}` stays as context only.
 
 **The fairness gate is mechanical and mandatory — run it on EVERY review:**
 
@@ -232,8 +266,15 @@ python "$SKILL_DIR/scripts/validate_review.py" "<review.json>" --expect-material
 
 Pass `--require-extended` on these fresh per-review calls: it enforces the
 class-feedback fields — `indicio_ia` (1-5 advisory AI-slop signal on the
-delivered material; NEVER a grade component) and `feedback_sugerido` (2-4
-Spanish sentences of draft student feedback for the teaching team).
+delivered material; NEVER a grade component) and `retroalimentacion`: exactly
+two `fortalezas` and two `por_mejorar`, one short phrase each (≤15 words asked,
+20 hard), concrete to the submission, no reviewer first person, praise
+formulas, em dashes or scores. Teaching team, 2026-10-01: "dos cosas buenas y
+dos por mejorar y ya… que no escriba mil cosas" — the free-form 2-4 sentences
+it replaces averaged 71 words. The Excel renders it as one paste-ready cell.
+Pass `--anchor-dates="<anclas_permitidas joined by |>"` too: it rejects an
+anchor outside the student's allowed dates, a verified launch later than the
+anchor, and an `age_months` that does not match the two dates.
 
 Exit 2 → re-dispatch that student ONCE with the `problems` list appended. Still
 failing → `NO REVISADO`, reason "revisión incompleta", flag for humans. The validator
@@ -270,6 +311,10 @@ and only genuinely unreviewed material stays NO REVISADO. It re-applies the vali
 normalization (defense in depth) and runs **same-tool reconciliation**: students whose
 verified dates for the same tool differ by >1 month all get `VERIFICAR FECHA` — the
 reviewers verified independently, so this is where disagreement becomes visible.
+With `historial.json` present it also checks every anchor against the delivered
+history (anchor outside the allowed dates, a round matched only by name, a
+verified date >1 month away from that round's) and marks `ancla_decisiva` on
+every row that is valid ONLY because its age was measured from an earlier round.
 
 ### 5bis. Adversarial date re-verification — top candidates NEVER ship unchecked
 
@@ -278,21 +323,28 @@ the reviewer NOTED the older date but anchored `age_months` to the new version
 label, and nothing re-checked the top. Now mandatory before the Excel:
 
 For **every top-8 candidate**, every row with `age_months` in 2.5–4.5,
-every row whose notes mention an earlier version/feature, **and every
-DISQUALIFIED row**: dispatch one fresh-context checker per row with
+every row whose notes mention an earlier version/feature, **every
+DISQUALIFIED row, and every `ancla_decisiva` row**: dispatch one fresh-context
+checker per row with
 `templates/date-check-prompt.md` (refutation framing — prove the capability
 is OLDER; for DQ rows it is BIDIRECTIONAL and also tries to prove the specific
 feature the student used is NEWER — in round 1 the TAs overturned 5 of 11
-DQs, mostly product-family dates applied to a newer feature). Fill
-`{{disqualified}}` with `true`/`false`. Collect verdicts into
+DQs, mostly product-family dates applied to a newer feature). It also answers
+`misma_herramienta`: is today's capability the one presented in the anchor
+round (and, for a DQ anchored at the submission date, was it carried from an
+earlier round — `ronda_misma_herramienta`)? Fill
+`{{disqualified}}` with `true`/`false` and the anchor placeholders from the
+row (`fecha_ancla`, `ancla_motivo`, `fecha_entrega`, `edad_a_entrega`,
+`herramienta_ronda_ancla`) plus the student's `historial_block`. Collect verdicts into
 `$WORK/date_checks.json`
 (`{"checks": [{"row_id", "verdict", "older_date", "older_evidence_url",
 "older_capability", "newer_date", "newer_evidence_url", "newer_capability",
-"notes"}]}`) and re-run `assemble_results.py` — verdicts become loud flags
+"misma_herramienta", "ronda_misma_herramienta", "notes"}]}`) and re-run
+`assemble_results.py` — verdicts become loud flags
 (`VERIFICAR FECHA` + `DISCREPANCIA FECHA` + `REVISAR MANUALMENTE` with the
-evidence URL; `mas_nueva` adds "la DESCALIFICACIÓN puede ser INCORRECTA");
-the pipeline never silently re-grades or un-disqualifies. A top-5 that
-survives this pass has earned it.
+evidence URL; `mas_nueva` adds "la DESCALIFICACIÓN puede ser INCORRECTA", and so
+does a same-tool finding on a DQ row); the pipeline never silently re-grades
+or un-disqualifies. A top-5 that survives this pass has earned it.
 
 ### 6. Generate the Excel
 
@@ -308,7 +360,9 @@ at delivery (a long name inside a deep `$WORK` hits MAX_PATH). The script comput
 final grade (single source of truth: 0.50/0.25/0.25 = `Nota rúbrica`; DQ rows get
 `Nota final` per `--dq-policy`, default cap at 3.0) and fails (exit 2)
 naming any listed entry with no row. Fix the missing rows; never work around the gate.
-Sheets: **Ranking**, **Detalle**, **Meta**.
+Sheets: **Ranking**, **Detalle**, **Meta**. Ranking carries `Fecha ancla` (date ·
+reason) before the age, and `Retroalimentación` (the 2+2, paste-ready) right after
+`Nota final`.
 
 ### 7. Deliver — multi-round master, history is sacred
 
@@ -363,6 +417,8 @@ veredicto.
 - Launch dates are verified by web search; the deck's claim alone is never trusted.
   Low-confidence verification → `age_months` stays null, flag `VERIFICAR FECHA`, never DQ.
 - Border band 3.5–4.5 months always carries flag `VERIFICAR FECHA`.
+- A tool's age is measured at its anchor date (first round with the same tool,
+  else the submission date) — never at the run date.
 - On a resubmission, grade the LATEST; evidence attached only to an earlier attempt
   rides along flagged (`build_bundles.py` does this automatically). Within one
   folder, version-marked files (v1/v2/FINAL/(2)) resolve to the most recent —
