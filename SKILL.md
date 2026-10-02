@@ -26,7 +26,15 @@ turns a pass into a fail). The row ranks with everyone and can be top-5; the
 reviewer's `disqualified` field still records that the rule was broken, and the
 Excel labels it `¿Penalizada?`. Exclusion policies remain available when the
 teaching team decides otherwise: `cap:N` (the 2026-08-21 TA calibration, cap at
-3.0), `fixed:N`, `rubric` (flag only) and `legacy` (automatic 1.0). General-purpose tools (ChatGPT,
+3.0), `fixed:N`, `rubric` (flag only) and `legacy` (automatic 1.0). **Unchanged
+resubmissions never score lower** (operator, 2026-10-01: "if the submission did not
+change from a past round to this one, the grade should never be lower"): when the
+file is the same as one a delivered earlier round graded — identical content
+fingerprint, or a re-save listed with its evidence in `$WORK/sin_cambios.json` — the
+`Nota final` is at least that round's grade (`ENTREGA SIN CAMBIOS`, `NOTA PROTEGIDA`
+when the floor raised it). In the first final round 25 students resubmitted an
+identical file and were graded lower by the stricter reviewers and date rule.
+General-purpose tools (ChatGPT,
 Gemini, Copilot, Claude…) are invalid unless the subject is a specific recently launched
 feature. Scale: 1.0–5.0.
 
@@ -288,8 +296,9 @@ also normalizes fields (strict dates, bare student names, ≤70-char tool, contr
 flag vocabulary; everything else moves to `observations`) — content is preserved,
 scores and justifications are never edited. Note the flag vocabulary split:
 reviewers emit the subset in the templates; `ENTREGA SIN PPT`, `ENTREGA
-DUPLICADA`, `SPOT-CHECK FALLIDO` and `EVIDENCIA DE ENVIO ANTERIOR INCLUIDA`
-are assigned by the assembler, and `EMPATE TOP5` / `EDAD SIN CALCULAR` by `make_excel.py`.
+DUPLICADA`, `SPOT-CHECK FALLIDO`, `EVIDENCIA DE ENVIO ANTERIOR INCLUIDA` and
+`ENTREGA SIN CAMBIOS` are assigned by the assembler, and `EMPATE TOP5` /
+`EDAD SIN CALCULAR` / `NOTA PROTEGIDA` by `make_excel.py`.
 
 **Spot-check honesty on BOTH passes** — every ~4th review, deck AND bundle alike
 (the pilot spot-checked only deck reviews; the #1-ranked student came from the
@@ -321,6 +330,13 @@ With `historial.json` present it also checks every anchor against the delivered
 history (anchor outside the allowed dates, a round matched only by name, a
 verified date >1 month away from that round's) and marks `ancla_decisiva` on
 every row that is valid ONLY because its age was measured from an earlier round.
+It also records `nota_piso` on every row whose file is the same as a delivered
+earlier round (by `Clave` only — a name match cannot vouch for a grade): identical
+`Huella`, or an entry in the optional `$WORK/sin_cambios.json`
+(`{"entradas": [{"folder_id", "rondas": ["Semana 4"], "evidencia": "texto idéntico
+salvo …"}]}`) for a file re-saved with the same content. Build that file only from
+a real comparison (same slide count, extracted text ≥ 99% similar, and say what the
+remaining difference is); never from the filename alone.
 
 ### 5bis. Adversarial date re-verification — top candidates NEVER ship unchecked
 
@@ -367,8 +383,11 @@ final grade (single source of truth: 0.50/0.25/0.25 = `Nota rúbrica`; DQ rows g
 `Nota final` per `--dq-policy`, default −0.5 protected at 3.0) and fails (exit 2)
 naming any listed entry with no row. Fix the missing rows; never work around the gate.
 Sheets: **Ranking**, **Detalle**, **Meta**. Ranking carries `Fecha ancla` (date ·
-reason) before the age, and `Retroalimentación` (the 2+2, paste-ready) right after
-`Nota final`.
+reason) before the age, then `Nota final`, `Nota mínima (sin cambios)` (the floor,
+when the file is unchanged from a graded earlier round) and `Retroalimentación` (the
+2+2, paste-ready). Re-running a round whose master already holds that round? Pass
+`--exclude-round="<ronda>"` to `build_history.py`, or a student is floored by their
+own first-run grade.
 
 ### 7. Deliver — multi-round master, history is sacred
 
