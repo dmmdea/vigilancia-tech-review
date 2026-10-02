@@ -414,7 +414,9 @@ def main():
                            and it.get("transcript_path"))
                 else 0
                 for it in items),
-            "was_no_deck": was_no_deck,
+            # a rebuilt .key IS a deck: the assembler keys ENTREGA SIN PPT
+            # and "Sin diapositivas" on this field
+            "was_no_deck": was_no_deck and not has_keynote,
             "no_deck_note": note,
             "carried_forward": [
                 {"from_folder_id": it.get("carried_from"),

@@ -119,7 +119,11 @@ def extract(src, outdir, ffmpeg=None):
             order = sorted((n for n in names
                             if re.match(r"ppt/slides/slide\d+\.xml$", n)),
                            key=lambda n: int(re.findall(r"\d+", n)[-1]))
-        slides, used = [], set()
+        # one file per media part, listed on EVERY slide that uses it: a deck
+        # often reuses one image (a logo, a recurring screenshot) and each
+        # slide's evidence must stay complete
+        written = {}
+        slides = []
         for k, part in enumerate(order, 1):
             if part not in names:
                 continue
@@ -130,11 +134,13 @@ def extract(src, outdir, ffmpeg=None):
                     continue
                 if typ == "image":
                     ext = os.path.splitext(tgt)[1].lower()
-                    if ext in VIEW_EXT and tgt not in used:
-                        images.append(_write(z, tgt, os.path.join(
-                            outdir, f"s{k:02d}_img{len(images) + 1}{ext}"),
-                            ffmpeg))
-                        used.add(tgt)
+                    if ext not in VIEW_EXT:
+                        continue
+                    if tgt not in written:
+                        written[tgt] = _write(z, tgt, os.path.join(
+                            outdir, f"m{len(written) + 1:03d}{ext}"), ffmpeg)
+                    if written[tgt] not in images:
+                        images.append(written[tgt])
                 elif typ == "chart":
                     ct = _chart_text(z.read(tgt))
                     if ct:

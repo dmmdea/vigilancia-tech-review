@@ -253,7 +253,20 @@ def main():
         sys.exit(2)
 
     rounds = load_rounds(masters, overrides) if masters else []
-    by_key, by_name = {}, {}
+    # A name match is accepted only when it is unambiguous on BOTH sides:
+    # one Clave-less row with that name in the round, and one student
+    # (one Clave) with that name in this plan. Otherwise it is reported and
+    # left unmatched — a wrong match would hand one student another's anchor.
+    nocode = {}
+    for ronda, _f, _s, rows in rounds:
+        for r in rows:
+            if not r["clave"] and r["nombre"]:
+                nocode[(ronda, r["nombre"])] = nocode.get((ronda, r["nombre"]), 0) + 1
+    plan_keys_by_name = {}
+    for e in plan["folders"]:
+        plan_keys_by_name.setdefault(norm_name(e.get("student_name")), set()).add(
+            norm_key(e.get("canvas_key")) or e["folder_id"])
+    by_key, by_name, ambiguous = {}, {}, set()
     for ronda, fecha, _src, rows in rounds:
         for r in rows:
             rec = {"ronda": ronda, "fecha": fecha,
@@ -263,6 +276,10 @@ def main():
             if r["clave"]:
                 by_key.setdefault(r["clave"], []).append(dict(rec, coincidencia="clave"))
             elif r["nombre"]:
+                if (nocode[(ronda, r["nombre"])] > 1
+                        or len(plan_keys_by_name.get(r["nombre"], ())) > 1):
+                    ambiguous.add((ronda, r["nombre"]))
+                    continue
                 by_name.setdefault(r["nombre"], []).append(dict(rec, coincidencia="nombre"))
 
     out, undated, stats = {}, [], {"clave": 0, "nombre": 0, "ninguna": 0}
@@ -312,6 +329,8 @@ def main():
         if not any(h["coincidencia"] == "clave" for h in entry["rondas"]):
             how = ("solo por NOMBRE" if entry["rondas"] else "SIN historial")
             print(f"  {how}: {entry['student_name']} ({fid})")
+    for ronda, nombre in sorted(ambiguous):
+        print(f"  AMBIGUO, sin asociar (resolver a mano): '{nombre}' en {ronda}")
 
 
 if __name__ == "__main__":

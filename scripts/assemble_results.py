@@ -48,7 +48,8 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from validate_review import (normalize_review,  # single source of truth
-                             _as_date, months_between)
+                             _as_date, months_between,
+                             AGE_TOL_DAY, AGE_TOL_MONTH)
 
 for _s in (sys.stdout, sys.stderr):
     if _s in (sys.__stdout__, sys.__stderr__) and hasattr(_s, "reconfigure"):
@@ -536,8 +537,25 @@ def main():
         anchor, _ = _as_date(fa)
         age = row.get("age_months")
         conf_ok = row.get("verification_confidence") in ("alta", "media")
-        if anchor and launch and conf_ok and isinstance(age, (int, float)):
+        # the validator's anchor arithmetic again (defense in depth: a stale
+        # or hand-edited review never passed the per-review gate)
+        if anchor and launch and conf_ok:
+            later = ((launch.year, launch.month) > (anchor.year, anchor.month)
+                     if _prec == "mes" else launch > anchor)
+            if later:
+                add_flags(row, "VERIFICAR FECHA", "REVISAR MANUALMENTE")
+                add_note(row, f"La fecha verificada {row.get('verified_launch_date')} "
+                              f"es posterior a la fecha ancla {fa}: no puede ser "
+                              "lo que el estudiante presentó en esa ronda.")
+        if (anchor and launch and conf_ok and isinstance(age, (int, float))
+                and not isinstance(age, bool)):
             recomputed = months_between(launch, anchor)
+            row["edad_recalculada"] = round(recomputed, 2)
+            tol = AGE_TOL_DAY if _prec == "dia" else AGE_TOL_MONTH
+            if abs(age - recomputed) > tol:
+                add_flags(row, "VERIFICAR FECHA")
+                add_note(row, f"Edad reportada {age} vs calculada desde la "
+                              f"fecha ancla {fa}: {recomputed:.2f} meses.")
             if (age > 4.0) != (recomputed > 4.0):
                 add_flags(row, "VERIFICAR FECHA", "REVISAR MANUALMENTE")
                 add_note(row, f"Edad reportada {age} vs calculada desde la "

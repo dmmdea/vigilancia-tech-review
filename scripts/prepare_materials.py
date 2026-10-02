@@ -246,6 +246,8 @@ def doc_to_pdf(src, dst):
 def html_to_pdf(src, dst):
     if not CHROME:
         return soffice_convert(src, dst)
+    if os.path.exists(dst):
+        os.remove(dst)     # never accept an artifact left by an earlier run
     try:
         subprocess.run(
             [CHROME, "--headless", "--disable-gpu", "--no-sandbox",
@@ -264,8 +266,10 @@ def html_screenshot(src, dst_png):
     scenes): one rendered viewport is still the student's artifact."""
     if not CHROME:
         return False, "Chrome no disponible"
+    if os.path.exists(dst_png):
+        os.remove(dst_png)  # a stale capture must not pass as this run's
     try:
-        subprocess.run(
+        r = subprocess.run(
             [CHROME, "--headless", "--no-sandbox", "--hide-scrollbars",
              "--window-size=1600,1000", "--virtual-time-budget=8000",
              f"--screenshot={os.path.abspath(dst_png)}",
@@ -273,7 +277,8 @@ def html_screenshot(src, dst_png):
             capture_output=True, text=True, errors="replace", timeout=150)
     except (subprocess.TimeoutExpired, OSError) as e:
         return False, str(e)[:200]
-    ok = os.path.exists(dst_png) and os.path.getsize(dst_png) > 0
+    ok = (r.returncode == 0 and os.path.exists(dst_png)
+          and os.path.getsize(dst_png) > 0)
     return (True, "") if ok else (False, "Chrome no produjo captura")
 
 
@@ -602,16 +607,17 @@ def process_file(fr, folder_id, items, matroot, prefix=""):
             try:
                 with open(longpath(src), "rb") as f:
                     head = f.read(1_000_000)
-                text = head.decode("utf-8")
+                # a full window may end mid-character: drop the tail bytes
+                text = (head[:-4] if len(head) == 1_000_000 else head).decode("utf-8")
                 printable = sum(ch.isprintable() or ch in "\r\n\t"
                                 for ch in text)
                 is_text = bool(text.strip()) and printable >= 0.95 * len(text)
             except (OSError, UnicodeDecodeError):
                 is_text = False
             if is_text:
+                # the head only DETECTS; the whole file is the material
                 dst = os.path.join(base, f"{tag}_texto.txt")
-                with open(dst, "w", encoding="utf-8") as f:
-                    f.write(text)
+                shutil.copyfile(longpath(src), dst)
                 items.append({"kind": "text", "path": os.path.abspath(dst),
                               "label": name,
                               "note": "archivo sin extensión reconocida; su "
